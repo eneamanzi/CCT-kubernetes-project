@@ -64,7 +64,7 @@ spec:
     spec:
       containers:
       - name: producer
-        image: producer:secure
+        image: producer:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: KAFKA_BOOTSTRAP

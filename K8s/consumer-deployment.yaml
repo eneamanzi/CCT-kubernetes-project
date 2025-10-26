@@ -54,7 +54,7 @@ spec:
     spec:
       containers:
       - name: consumer
-        image: consumer:secure
+        image: consumer:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: KAFKA_BOOTSTRAP
