@@ -34,7 +34,12 @@ L'architettura include:
   - [✨ Propreità Non Funzionali](#-propreità-non-funzionali)
     - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
   - [🛠️ Comandi di Test (con nip.io)](#️-comandi-di-test-con-nipio)
-    - [Inviare Eventi al Producer:](#inviare-eventi-al-producer)
+    - [Inviare Eventi al Producer](#inviare-eventi-al-producer)
+      - [Login Utenti:](#login-utenti)
+      - [Risultati Quiz:](#risultati-quiz)
+      - [Download Materiali:](#download-materiali)
+      - [Prenotazione Esami:](#prenotazione-esami)
+      - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
 
 
 ## 📋 Prerequisiti
@@ -336,47 +341,54 @@ echo "IP Cluster (IP):    $IP"
 echo "Porta Gateway (PORT): $PORT"
 ```
 
-  ### Inviare Eventi al Producer:
-    Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instrada al servizio `producer`.
+### Inviare Eventi al Producer
+Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instrada al servizio `producer`.
 
-    #### Login Utenti:
+#### Login Utenti:
 
-    ```bash
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "alice"}'
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "bob"}'
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "charlie"}'
-    ```
+```bash
+curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "alice"}'
 
-    **Risultati Quiz:**
+curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "bob"}'
 
-    ```bash
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "alice", "quiz_id": "math101", "score": 24, "course_id": "math"}'
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "bob", "quiz_id": "math101", "score": 15, "course_id": "math"}'
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "charlie", "quiz_id": "phys101", "score": 28, "course_id": "physics"}'
-    ```
+curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "charlie"}'
+```
 
-    **Download Materiali:**
+#### Risultati Quiz:
 
-    ```bash
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "alice", "materiale_id": "pdf1", "course_id": "math"}'
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "bob", "materiale_id": "pdf1", "course_id": "math"}'
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "charlie", "materiale_id": "pdf2", "course_id": "physics"}'
-    ```
+```bash
+curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "alice", "quiz_id": "math101", "score": 24, "course_id": "math"}'
 
-    **Prenotazione Esami:**
+curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "bob", "quiz_id": "math101", "score": 15, "course_id": "math"}'
 
-    ```bash
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "alice", "esame_id": "math1", "course_id": "math"}'
-    curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "bob", "esame_id": "phys1", "course_id": "physics"}'
-    ```
+curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "charlie", "quiz_id": "phys101", "score": 28, "course_id": "physics"}'
+```
 
-1.  **Leggere le Metriche (Metrics-service):**
-    Queste richieste `curl` colpiscono l'host `metrics.$IP.nip.io`, che Kong instrada al servizio `metrics-service`.
+#### Download Materiali:
 
-    ```bash
-    curl http://metrics.$IP.nip.io:$PORT/metrics/logins
-    curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/success-rate
-    curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/average-score
-    curl http://metrics.$IP.nip.io:$PORT/metrics/downloads
-    curl http://metrics.$IP.nip.io:$PORT/metrics/exams
-    ```
+```bash
+curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "alice", "materiale_id": "pdf1", "course_id": "math"}'
+
+curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "bob", "materiale_id": "pdf1", "course_id": "math"}'
+
+curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "charlie", "materiale_id": "pdf2", "course_id": "physics"}'
+```
+
+#### Prenotazione Esami:
+
+```bash
+curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "alice", "esame_id": "math1", "course_id": "math"}'
+
+curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "bob", "esame_id": "phys1", "course_id": "physics"}'
+```
+
+#### Leggere le Metriche (Metrics-service)
+Queste richieste `curl` colpiscono l'host `metrics.$IP.nip.io`, che Kong instrada al servizio `metrics-service`.
+
+```bash
+curl http://metrics.$IP.nip.io:$PORT/metrics/logins
+curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/success-rate
+curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/average-score
+curl http://metrics.$IP.nip.io:$PORT/metrics/downloads
+curl http://metrics.$IP.nip.io:$PORT/metrics/exams
+```
