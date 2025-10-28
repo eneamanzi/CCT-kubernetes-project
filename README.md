@@ -37,7 +37,7 @@ L'architettura include:
       - [Prenotazione Esami:](#prenotazione-esami)
     - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
   - [⚙️ Architettura e Funzionamento (Flusso dei Dati)](#️-architettura-e-funzionamento-flusso-dei-dati)
-  - [✨ Propreità Non Funzionali (TODO)](#-propreità-non-funzionali-todo)
+  - [✨ Proprietà Non Funzionali (TODO)](#-proprietà-non-funzionali-todo)
     - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
 
 
@@ -372,7 +372,7 @@ Il flusso logico delle richieste è il seguente:
 
 
 
-## ✨ Propreità Non Funzionali (TODO)
+## ✨ Proprietà Non Funzionali (TODO)
 
   * **Sicurezza**: La comunicazione tra Producer, Consumer e Kafka è protetta da **TLS**. L'autenticazione a Kafka avviene tramite **SASL SCRAM-SHA-512**.
   * **Fault Tolerance**: Grazie a Kafka, se il Consumer smette di funzionare, i messaggi rimangono nella coda pronti per essere processati non appena il Consumer torna online.
