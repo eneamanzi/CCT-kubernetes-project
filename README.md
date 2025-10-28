@@ -29,17 +29,16 @@ L'architettura include:
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
     - [6. Deploy Restante](#6-deploy-restante)
-  - [⚙️ Funzionamento](#️-funzionamento)
-  - [🏗️ Architettura e Flusso dei Dati](#️-architettura-e-flusso-dei-dati)
-  - [✨ Propreità Non Funzionali](#-propreità-non-funzionali)
-    - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
   - [🛠️ Comandi di Test (con nip.io)](#️-comandi-di-test-con-nipio)
     - [Inviare Eventi al Producer](#inviare-eventi-al-producer)
       - [Login Utenti:](#login-utenti)
       - [Risultati Quiz:](#risultati-quiz)
       - [Download Materiali:](#download-materiali)
       - [Prenotazione Esami:](#prenotazione-esami)
-      - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
+    - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
+  - [⚙️ Architettura e Funzionamento (Flusso dei Dati)](#️-architettura-e-funzionamento-flusso-dei-dati)
+  - [✨ Propreità Non Funzionali (TODO)](#-propreità-non-funzionali-todo)
+    - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
 
 
 ## 📋 Prerequisiti
@@ -275,57 +274,6 @@ Infine possiamo deployare i manifest restanti
 kubectl apply -f ./K8s
 ```
 
-
-## ⚙️ Funzionamento
-
-Una volta completato il deploy, il sistema gestisce due flussi principali tramite l'API Gateway Kong:
-
-  * **Richieste POST (`/event`)**
-
-    1.  Le richieste (es. `POST /event/some-data`) vengono inviate a Kong.
-    2.  Kong le inoltra al microservizio **Producer**.
-    3.  Il Producer valida i dati e li pubblica sulla coda Kafka (`student-events`).
-    4.  Il **Consumer** (in ascolto sulla coda) riceve il messaggio.
-    5.  Il Consumer salva i dati nel database MongoDB.
-
-  * **Richieste GET (`/metrics`)**
-
-    1.  Le richieste `GET /metrics` arrivano a Kong.
-    2.  Kong le inoltra al **Metrics-service**.
-    3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
-    4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
-
-## 🏗️ Architettura e Flusso dei Dati
-
-Il flusso logico delle richieste è il seguente:
-
-| Step | Componente | Azione |
-| :--- | :--- | :--- |
-| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
-| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
-| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
-| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
-| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
-
-
-
-## ✨ Propreità Non Funzionali
-
-  * **Sicurezza**: La comunicazione tra Producer, Consumer e Kafka è protetta da **TLS**. L'autenticazione a Kafka avviene tramite **SASL SCRAM-SHA-512**.
-  * **Fault Tolerance**: Grazie a Kafka, se il Consumer smette di funzionare, i messaggi rimangono nella coda pronti per essere processati non appena il Consumer torna online.
-  * **Scalabilità**: È possibile scalare orizzontalmente i pod del Producer per gestire un carico maggiore di richieste in ingresso.
-  * **Self-Healing**: Kubernetes riavvia automaticamente i pod (Producer, Consumer, ecc.) in caso di crash.
-
-### 1. Verificare connessione TLS a Kafka
-
-Questo comando esegue un test `openssl` dall'interno di un broker Kafka per verificare che la porta 9093 (bootstrap TLS) sia esposta e funzionante.
-
-```bash
-kubectl exec -it uni-it-cluster-broker-0 -n kafka -- \
-openssl s_client -connect uni-it-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093 -brief </dev/null
-```
------
-
 ## 🛠️ Comandi di Test (con nip.io)
 
 Questi comandi utilizzano il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del tuo cluster Minikube, permettendoti di testare gli Ingress basati su host.
@@ -382,7 +330,7 @@ curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: appli
 curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "bob", "esame_id": "phys1", "course_id": "physics"}'
 ```
 
-#### Leggere le Metriche (Metrics-service)
+### Leggere le Metriche (Metrics-service)
 Queste richieste `curl` colpiscono l'host `metrics.$IP.nip.io`, che Kong instrada al servizio `metrics-service`.
 
 ```bash
@@ -392,3 +340,53 @@ curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/average-score
 curl http://metrics.$IP.nip.io:$PORT/metrics/downloads
 curl http://metrics.$IP.nip.io:$PORT/metrics/exams
 ```
+
+## ⚙️ Architettura e Funzionamento (Flusso dei Dati)
+
+Una volta completato il deploy, il sistema gestisce due flussi principali tramite l'API Gateway Kong:
+
+  * **Richieste POST (`/event`)**
+
+    1.  Le richieste (es. `POST /event/some-data`) vengono inviate a Kong.
+    2.  Kong le inoltra al microservizio **Producer**.
+    3.  Il Producer valida i dati e li pubblica sulla coda Kafka (`student-events`).
+    4.  Il **Consumer** (in ascolto sulla coda) riceve il messaggio.
+    5.  Il Consumer salva i dati nel database MongoDB.
+
+  * **Richieste GET (`/metrics`)**
+
+    1.  Le richieste `GET /metrics` arrivano a Kong.
+    2.  Kong le inoltra al **Metrics-service**.
+    3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
+    4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
+
+
+Il flusso logico delle richieste è il seguente:
+| Step | Componente | Azione |
+| :--- | :--- | :--- |
+| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
+| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
+| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
+| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
+| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
+
+
+
+## ✨ Propreità Non Funzionali (TODO)
+
+  * **Sicurezza**: La comunicazione tra Producer, Consumer e Kafka è protetta da **TLS**. L'autenticazione a Kafka avviene tramite **SASL SCRAM-SHA-512**.
+  * **Fault Tolerance**: Grazie a Kafka, se il Consumer smette di funzionare, i messaggi rimangono nella coda pronti per essere processati non appena il Consumer torna online.
+  * **Scalabilità**: È possibile scalare orizzontalmente i pod del Producer per gestire un carico maggiore di richieste in ingresso.
+  * **Self-Healing**: Kubernetes riavvia automaticamente i pod (Producer, Consumer, ecc.) in caso di crash.
+
+### 1. Verificare connessione TLS a Kafka
+
+Questo comando esegue un test `openssl` dall'interno di un broker Kafka per verificare che la porta 9093 (bootstrap TLS) sia esposta e funzionante.
+
+```bash
+kubectl exec -it uni-it-cluster-broker-0 -n kafka -- \
+openssl s_client -connect uni-it-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093 -brief </dev/null
+```
+-----
+
+
