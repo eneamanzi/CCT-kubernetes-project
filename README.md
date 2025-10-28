@@ -21,11 +21,13 @@ L'architettura include:
     - [Setup Iniziale del Cluster](#setup-iniziale-del-cluster)
     - [1. Creazione Namespace](#1-creazione-namespace)
     - [2. Strimzi Kafka Operator](#2-strimzi-kafka-operator)
+      - [2.1. Deploy del Cluster Kafka:](#21-deploy-del-cluster-kafka)
+      - [2.2. Crea Secret per Kafka SSL (per le App):](#22-crea-secret-per-kafka-ssl-per-le-app)
     - [3. MongoDB](#3-mongodb)
-      - [Configurazione Utente Applicativo](#configurazione-utente-applicativo)
+      - [3.1. Configurazione Utente Applicativo](#31-configurazione-utente-applicativo)
     - [4. Kong API Gateway](#4-kong-api-gateway)
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
-      - [Aggiornamento Microservizi](#aggiornamento-microservizi)
+      - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
     - [6. Deploy Restante (Secret e Applicazioni)](#6-deploy-restante-secret-e-applicazioni)
   - [⚙️ Funzionamento](#️-funzionamento)
   - [✨ Caratteristiche (Requisiti Non Funzionali)](#-caratteristiche-requisiti-non-funzionali)
@@ -66,15 +68,16 @@ Il flusso logico delle richieste è il seguente:
 
 Segui questi passaggi per configurare e avviare l'intero stack applicativo.
 
+**(Opzionale) Reset e Pulizia Ambiente:**
+```bash
+minikube delete --all
+docker system prune -a -f
+```
+
 ### Setup Iniziale del Cluster
 
-1.  **(Opzionale) Reset e Pulizia Ambiente:**
-    Per ricominciare da capo:
-    ```bash
-    minikube delete --all
-    docker system prune -a -f
-    ```
-2.  **Avviare Minikube:**
+
+1.  **Avviare Minikube:**
     ```bash
     minikube start
     ```
@@ -83,7 +86,7 @@ Segui questi passaggi per configurare e avviare l'intero stack applicativo.
     sudo usermod -aG docker $USER && newgrp docker
     ```
 
-3.  **Impostare l'ambiente Docker:**
+2.  **Impostare l'ambiente Docker:**
     Per utilizzare il Docker daemon interno a Minikube (necessario per buildare le immagini che Kubernetes userà):
     ```bash
     eval $(minikube docker-env)
@@ -96,13 +99,10 @@ Segui questi passaggi per configurare e avviare l'intero stack applicativo.
 
 Creiamo i namespace per isolare i componenti:
 ```bash
-# Per l'Ingress Controller (Kong)
 kubectl create namespace kong
 
-# Per il servizio di metriche
 kubectl create namespace metrics
 
-# Per Kafka, Producer, Consumer, e Mongo
 kubectl create namespace kafka
 ```
 
@@ -116,7 +116,31 @@ helm repo update
 helm install strimzi-cluster-operator strimzi/strimzi-kafka-operator -n kafka
 ```
 
+#### 2.1\. Deploy del Cluster Kafka:
+
+Per prima cosa, applichiamo i manifest che definiscono il Cluster, gli Utenti e i Topic di Kafka. Questo avvierà l'operator Strimzi, che creerà il cluster e genererà il secret `uni-it-cluster-cluster-ca-cert` contenente i certificati CA.
+
+```bash
+kubectl apply -f ./K8s/kafka-cluster.yaml
+kubectl apply -f ./K8s/kafka-users.yaml
+kubectl apply -f ./K8s/kafka-topic.yaml
+```
+**Attendi un minuto** affinché l'operator crei il cluster. Puoi verificare che il secret `uni-it-cluster-cluster-ca-cert` sia stato creato con successo eseguendo e ottenendo dei secret:
+
+```bash
+kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka
+```
+
 ✅ *Kafka è configurato (tramite i file YAML in `K8s/`) per usare TLS e autenticazione SCRAM-SHA-512.*
+
+#### 2.2\. Crea Secret per Kafka SSL (per le App):
+
+Ora, creiamo il secret `kafka-ca-cert`. Questo comando legge il certificato CA dal secret generato da Strimzi (`uni-it-cluster-cluster-ca-cert`) e lo salva in un nuovo secret che i nostri pod (Producer e Consumer) useranno per comunicare via TLS con Kafka.
+
+```bash
+kubectl create secret generic kafka-ca-cert -n kafka \
+  --from-literal=ca.crt="$(kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka -o jsonpath='{.data.ca\.crt}' | base64 -d)"
+```
 
 ### 3\. MongoDB
 
@@ -129,7 +153,7 @@ helm install mongo-mongodb bitnami/mongodb --namespace kafka --version 18.1.1
 
 *(Se l'installazione fallisce per errori di connessione, riprovare)*
 
-#### Configurazione Utente Applicativo
+#### 3.1\. Configurazione Utente Applicativo
 
 1.  **Recupera la password di root:**
 
@@ -162,8 +186,6 @@ helm install mongo-mongodb bitnami/mongodb --namespace kafka --version 18.1.1
       pwd: "appuserpass",
       roles: [ { role: "readWrite", db: "student_events" } ]
     });
-
-    exit;
     ```
 
 Le applicazioni useranno questa stringa di connessione: `mongodb://appuser:appuserpass@mongo-mongodb.kafka.svc.cluster.local:27017/student_events?authSource=student_events`
@@ -236,7 +258,7 @@ Per controllare che le immagini siano state create nell'ambiente Minikube:
 docker images
 ```
 
-#### Aggiornamento Microservizi
+#### 5.1\. Aggiornamento Microservizi
 
 Se modifichi il codice (es. `app.py`), devi ricreare l'immagine e riavviare il deployment:
 
@@ -257,30 +279,10 @@ kubectl rollout restart deployment -n metrics
 
 ### 6\. Deploy Restante (Secret e Applicazioni)
 
-L'applicazione dei manifest deve seguire un ordine preciso per permettere a Kafka di generare i secret necessari prima che i microservizi (Producer/Consumer) tentino di utilizzarli.
-
-1.  **Deploy del Cluster Kafka (Cluster + Topic + Utenti):**
-    Per prima cosa, applichiamo i manifest che definiscono il Cluster avviando quindi l'operator Strimzi, che creerà il cluster e genererà il secret `uni-it-cluster-cluster-ca-cert` contenente i certificati CA.
-
-    ```bash
-    kubectl apply -f ./K8s/kafka-cluster.yaml
-    ```
-    **Attendi un minuto** affinché il secret `uni-it-cluster-cluster-ca-cert` venga creato prima di procedere.
-
-2.  **Crea Secret per Kafka SSL (per le App):**
-    Ora, creiamo il secret `kafka-ca-cert`. Questo comando legge il certificato CA dal secret generato da Strimzi (`uni-it-cluster-cluster-ca-cert`) e lo salva in un nuovo secret che i nostri pod (Producer e Consumer) useranno per comunicare via TLS con Kafka.
-
-    ```bash
-    kubectl create secret generic kafka-ca-cert -n kafka \
-      --from-literal=ca.crt="$(kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka -o jsonpath='{.data.ca\.crt}' | base64 -d)"
-    ```
-
-3.  **Deploy dei Microservizi e Ingress:**
-    Infine, avendo creato il secret `kafka-ca-cert` da cui dipendono, possiamo deployare i manifest restanti
-
-    ```bash
-    kubectl apply -f ./K8s
-    ```
+Infine possiamo deployare i manifest restanti
+```bash
+kubectl apply -f ./K8s
+```
 -----
 
 ## ⚙️ Funzionamento
