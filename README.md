@@ -1,4 +1,3 @@
-````markdown
 # Progetto Kubernetes per il corso CCT
 
 Questo repository contiene il progetto per il corso di *Cloud Computing Technologies (CCT)*. L'obiettivo è implementare un'architettura a microservizi su Kubernetes che gestisca eventi tramite un flusso di dati asincrono (Kafka) e un database (MongoDB), il tutto esposto tramite un API Gateway (Kong).
@@ -46,7 +45,13 @@ Segui questi passaggi per configurare e avviare l'intero stack applicativo.
 
 ### Setup Iniziale del Cluster
 
-1.  **Avviare Minikube:**
+1.  **(Opzionale) Reset e Pulizia Ambiente:**
+    Per ricominciare da capo:
+    ```bash
+    minikube delete --all
+    docker system prune -a -f
+    ```
+2.  **Avviare Minikube:**
     ```bash
     minikube start
     ```
@@ -55,19 +60,14 @@ Segui questi passaggi per configurare e avviare l'intero stack applicativo.
     sudo usermod -aG docker $USER && newgrp docker
     ```
 
-2.  **Impostare l'ambiente Docker:**
+3.  **Impostare l'ambiente Docker:**
     Per utilizzare il Docker daemon interno a Minikube (necessario per buildare le immagini che Kubernetes userà):
     ```bash
     eval $(minikube docker-env)
     ```
     **ATTENZIONE:** Questo comando va eseguito in *ogni terminale* che userai per buildare le immagini Docker.
 
-3.  **(Opzionale) Reset e Pulizia Ambiente:**
-    Per ricominciare da capo:
-    ```bash
-    minikube delete --all
-    docker system prune -a -f
-    ```
+
 
 ### 1. Creazione Namespace
 
@@ -81,7 +81,6 @@ kubectl create namespace metrics
 
 # Per Kafka, Producer, Consumer, e Mongo
 kubectl create namespace kafka
-````
 
 ### 2\. Strimzi Kafka Operator
 
