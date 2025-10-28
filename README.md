@@ -280,12 +280,10 @@ kubectl rollout restart deployment -n metrics
 L'applicazione dei manifest deve seguire un ordine preciso per permettere a Kafka di generare i secret necessari prima che i microservizi (Producer/Consumer) tentino di utilizzarli.
 
 1.  **Deploy del Cluster Kafka (Cluster + Topic + Utenti):**
-    Per prima cosa, applichiamo i manifest che definiscono il Cluster, i Topic e gli Utenti di Kafka. Questo avvierà l'operator Strimzi, che creerà il cluster e genererà il secret `uni-it-cluster-cluster-ca-cert` contenente i certificati CA.
+    Per prima cosa, applichiamo i manifest che definiscono il Cluster avviando quindi l'operator Strimzi, che creerà il cluster e genererà il secret `uni-it-cluster-cluster-ca-cert` contenente i certificati CA.
 
     ```bash
     kubectl apply -f ./K8s/kafka-cluster.yaml
-    kubectl apply -f ./K8s/kafka-topic.yaml
-    kubectl apply -f ./K8s/kafka-users.yaml
     ```
     **Attendi un minuto** affinché il secret `uni-it-cluster-cluster-ca-cert` venga creato prima di procedere.
 
@@ -298,7 +296,7 @@ L'applicazione dei manifest deve seguire un ordine preciso per permettere a Kafk
     ```
 
 3.  **Deploy dei Microservizi e Ingress:**
-    Infine, avendo creato il secret `kafka-ca-cert` da cui dipendono, possiamo deployare i manifest restanti dei nostri microservizi (Producer, Consumer, Metrics) e l'Ingress di Kong.
+    Infine, avendo creato il secret `kafka-ca-cert` da cui dipendono, possiamo deployare i manifest restanti
 
     ```bash
     kubectl apply -f ./K8s
