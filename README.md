@@ -11,9 +11,9 @@ L'architettura include:
 * **Metrics-service**: Microservizio che espone metriche calcolate leggendo da MongoDB.
 
 ## Indice
+
 - [Progetto Kubernetes per il corso CCT](#progetto-kubernetes-per-il-corso-cct)
   - [Indice](#indice)
-  - [🏗️ Architettura e Flusso dei Dati](#️-architettura-e-flusso-dei-dati)
   - [📋 Prerequisiti](#-prerequisiti)
     - [Necessari](#necessari)
     - [Opzionali](#opzionali)
@@ -28,28 +28,14 @@ L'architettura include:
     - [4. Kong API Gateway](#4-kong-api-gateway)
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
-    - [6. Deploy Restante (Secret e Applicazioni)](#6-deploy-restante-secret-e-applicazioni)
+    - [6. Deploy Restante](#6-deploy-restante)
   - [⚙️ Funzionamento](#️-funzionamento)
-  - [✨ Caratteristiche (Requisiti Non Funzionali)](#-caratteristiche-requisiti-non-funzionali)
-  - [🛠️ Comandi Utili](#️-comandi-utili)
-    - [Verificare connessione TLS a Kafka](#verificare-connessione-tls-a-kafka)
+  - [🏗️ Architettura e Flusso dei Dati](#️-architettura-e-flusso-dei-dati)
+  - [✨ Propreità Non Funzionali](#-propreità-non-funzionali)
+    - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
+  - [🛠️ Comandi di Test (con nip.io)](#️-comandi-di-test-con-nipio)
+    - [Inviare Eventi al Producer:](#inviare-eventi-al-producer)
 
-
----
-
-## 🏗️ Architettura e Flusso dei Dati
-
-Il flusso logico delle richieste è il seguente:
-
-| Step | Componente | Azione |
-| :--- | :--- | :--- |
-| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
-| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
-| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
-| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
-| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
-
----
 
 ## 📋 Prerequisiti
 
@@ -277,13 +263,13 @@ kubectl rollout restart deployment -n kafka
 kubectl rollout restart deployment -n metrics
 ```
 
-### 6\. Deploy Restante (Secret e Applicazioni)
+### 6\. Deploy Restante
 
 Infine possiamo deployare i manifest restanti
 ```bash
 kubectl apply -f ./K8s
 ```
------
+
 
 ## ⚙️ Funzionamento
 
@@ -304,20 +290,28 @@ Una volta completato il deploy, il sistema gestisce due flussi principali tramit
     3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
     4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
 
------
+## 🏗️ Architettura e Flusso dei Dati
 
-## ✨ Caratteristiche (Requisiti Non Funzionali)
+Il flusso logico delle richieste è il seguente:
+
+| Step | Componente | Azione |
+| :--- | :--- | :--- |
+| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
+| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
+| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
+| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
+| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
+
+
+
+## ✨ Propreità Non Funzionali
 
   * **Sicurezza**: La comunicazione tra Producer, Consumer e Kafka è protetta da **TLS**. L'autenticazione a Kafka avviene tramite **SASL SCRAM-SHA-512**.
   * **Fault Tolerance**: Grazie a Kafka, se il Consumer smette di funzionare, i messaggi rimangono nella coda pronti per essere processati non appena il Consumer torna online.
   * **Scalabilità**: È possibile scalare orizzontalmente i pod del Producer per gestire un carico maggiore di richieste in ingresso.
   * **Self-Healing**: Kubernetes riavvia automaticamente i pod (Producer, Consumer, ecc.) in caso di crash.
 
------
-
-## 🛠️ Comandi Utili
-
-### Verificare connessione TLS a Kafka
+### 1. Verificare connessione TLS a Kafka
 
 Questo comando esegue un test `openssl` dall'interno di un broker Kafka per verificare che la porta 9093 (bootstrap TLS) sia esposta e funzionante.
 
@@ -325,3 +319,64 @@ Questo comando esegue un test `openssl` dall'interno di un broker Kafka per veri
 kubectl exec -it uni-it-cluster-broker-0 -n kafka -- \
 openssl s_client -connect uni-it-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093 -brief </dev/null
 ```
+-----
+
+## 🛠️ Comandi di Test (con nip.io)
+
+Questi comandi utilizzano il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del tuo cluster Minikube, permettendoti di testare gli Ingress basati su host.
+
+  **Esporta l'IP del Cluster e la Porta del Gateway:**
+Esegui questi comandi nel tuo terminale per impostare le variabili d'ambiente.
+
+```bash
+IP=$(minikube ip)
+# Questo comando estrae solo il numero di porta dall'URL completo
+PORT=$(minikube service kong-kong-proxy -n kong --url | head -n 1 | awk -F: '{print $3}')
+echo "IP Cluster (IP):    $IP"
+echo "Porta Gateway (PORT): $PORT"
+```
+
+  ### Inviare Eventi al Producer:
+    Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instrada al servizio `producer`.
+
+    #### Login Utenti:
+
+    ```bash
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "alice"}'
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "bob"}'
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "charlie"}'
+    ```
+
+    **Risultati Quiz:**
+
+    ```bash
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "alice", "quiz_id": "math101", "score": 24, "course_id": "math"}'
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "bob", "quiz_id": "math101", "score": 15, "course_id": "math"}'
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "charlie", "quiz_id": "phys101", "score": 28, "course_id": "physics"}'
+    ```
+
+    **Download Materiali:**
+
+    ```bash
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "alice", "materiale_id": "pdf1", "course_id": "math"}'
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "bob", "materiale_id": "pdf1", "course_id": "math"}'
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "charlie", "materiale_id": "pdf2", "course_id": "physics"}'
+    ```
+
+    **Prenotazione Esami:**
+
+    ```bash
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "alice", "esame_id": "math1", "course_id": "math"}'
+    curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "bob", "esame_id": "phys1", "course_id": "physics"}'
+    ```
+
+1.  **Leggere le Metriche (Metrics-service):**
+    Queste richieste `curl` colpiscono l'host `metrics.$IP.nip.io`, che Kong instrada al servizio `metrics-service`.
+
+    ```bash
+    curl http://metrics.$IP.nip.io:$PORT/metrics/logins
+    curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/success-rate
+    curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/average-score
+    curl http://metrics.$IP.nip.io:$PORT/metrics/downloads
+    curl http://metrics.$IP.nip.io:$PORT/metrics/exams
+    ```
