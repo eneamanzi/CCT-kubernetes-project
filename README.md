@@ -27,6 +27,7 @@ L'architettura include:
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [Aggiornamento Microservizi](#aggiornamento-microservizi)
     - [6. Deploy Restante (Secret e Applicazioni)](#6-deploy-restante-secret-e-applicazioni)
+    - [6. Deploy Restante (Secret e Applicazioni)](#6-deploy-restante-secret-e-applicazioni-1)
   - [⚙️ Funzionamento](#️-funzionamento)
   - [✨ Caratteristiche (Requisiti Non Funzionali)](#-caratteristiche-requisiti-non-funzionali)
   - [🛠️ Comandi Utili](#️-comandi-utili)
@@ -257,6 +258,7 @@ kubectl rollout restart deployment -n metrics
 
 ### 6\. Deploy Restante (Secret e Applicazioni)
 
+
 1.  **Crea Secret per Kafka SSL:**
     Questo secret permette ai pod (Producer/Consumer) di comunicare con Kafka tramite TLS.
     **IMPORTANTE:** Questo comando va eseguito *prima* di applicare i manifest K8s.
@@ -273,6 +275,34 @@ kubectl rollout restart deployment -n metrics
     kubectl apply -f ./K8s
     ```
 
+### 6\. Deploy Restante (Secret e Applicazioni)
+
+L'applicazione dei manifest deve seguire un ordine preciso per permettere a Kafka di generare i secret necessari prima che i microservizi (Producer/Consumer) tentino di utilizzarli.
+
+1.  **Deploy del Cluster Kafka (Cluster + Topic + Utenti):**
+    Per prima cosa, applichiamo i manifest che definiscono il Cluster, i Topic e gli Utenti di Kafka. Questo avvierà l'operator Strimzi, che creerà il cluster e genererà il secret `uni-it-cluster-cluster-ca-cert` contenente i certificati CA.
+
+    ```bash
+    kubectl apply -f ./K8s/kafka-cluster.yaml
+    kubectl apply -f ./K8s/kafka-topic.yaml
+    kubectl apply -f ./K8s/kafka-users.yaml
+    ```
+    **Attendi un minuto** affinché il secret `uni-it-cluster-cluster-ca-cert` venga creato prima di procedere.
+
+2.  **Crea Secret per Kafka SSL (per le App):**
+    Ora, creiamo il secret `kafka-ca-cert`. Questo comando legge il certificato CA dal secret generato da Strimzi (`uni-it-cluster-cluster-ca-cert`) e lo salva in un nuovo secret che i nostri pod (Producer e Consumer) useranno per comunicare via TLS con Kafka.
+
+    ```bash
+    kubectl create secret generic kafka-ca-cert -n kafka \
+      --from-literal=ca.crt="$(kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka -o jsonpath='{.data.ca\.crt}' | base64 -d)"
+    ```
+
+3.  **Deploy dei Microservizi e Ingress:**
+    Infine, avendo creato il secret `kafka-ca-cert` da cui dipendono, possiamo deployare i manifest restanti dei nostri microservizi (Producer, Consumer, Metrics) e l'Ingress di Kong.
+
+    ```bash
+    kubectl apply -f ./K8s
+    ```
 -----
 
 ## ⚙️ Funzionamento
