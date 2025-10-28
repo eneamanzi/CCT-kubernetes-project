@@ -10,6 +10,29 @@ L'architettura include:
 * **MongoDB**: Database per la persistenza dei dati.
 * **Metrics-service**: Microservizio che espone metriche calcolate leggendo da MongoDB.
 
+## Indice
+- [Progetto Kubernetes per il corso CCT](#progetto-kubernetes-per-il-corso-cct)
+  - [Indice](#indice)
+  - [🏗️ Architettura e Flusso dei Dati](#️-architettura-e-flusso-dei-dati)
+  - [📋 Prerequisiti](#-prerequisiti)
+    - [Necessari](#necessari)
+    - [Opzionali](#opzionali)
+  - [🚀 Guida all'Installazione](#-guida-allinstallazione)
+    - [Setup Iniziale del Cluster](#setup-iniziale-del-cluster)
+    - [1. Creazione Namespace](#1-creazione-namespace)
+    - [2. Strimzi Kafka Operator](#2-strimzi-kafka-operator)
+    - [3. MongoDB](#3-mongodb)
+      - [Configurazione Utente Applicativo](#configurazione-utente-applicativo)
+    - [4. Kong API Gateway](#4-kong-api-gateway)
+    - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
+      - [Aggiornamento Microservizi](#aggiornamento-microservizi)
+    - [6. Deploy Restante (Secret e Applicazioni)](#6-deploy-restante-secret-e-applicazioni)
+  - [⚙️ Funzionamento](#️-funzionamento)
+  - [✨ Caratteristiche (Requisiti Non Funzionali)](#-caratteristiche-requisiti-non-funzionali)
+  - [🛠️ Comandi Utili](#️-comandi-utili)
+    - [Verificare connessione TLS a Kafka](#verificare-connessione-tls-a-kafka)
+
+
 ---
 
 ## 🏗️ Architettura e Flusso dei Dati
