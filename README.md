@@ -167,15 +167,27 @@ helm install mongo-mongodb bitnami/mongodb --namespace kafka --version 18.1.1
     ```
 
 4.  **Nel prompt di Mongo, esegui:**
+    
+    1.  Passa al database `student_event`
+        ```mongo
+        use student_events;
+        ```
+    2.  Crea l'utenza che verrà usata per accedere al DB
+        ```mongo
+        db.createUser({
+          user: "appuser",
+          pwd: "appuserpass",
+          roles: [ { role: "readWrite", db: "student_events" } ]
+        });
+        ```
+5.  **Controllare creazione:**
 
     ```mongo
     use student_events;
+    ```
 
-    db.createUser({
-      user: "appuser",
-      pwd: "appuserpass",
-      roles: [ { role: "readWrite", db: "student_events" } ]
-    });
+    ```mongo
+    db.getUsers()
     ```
 
 Le applicazioni useranno questa stringa di connessione: `mongodb://appuser:appuserpass@mongo-mongodb.kafka.svc.cluster.local:27017/student_events?authSource=student_events`
@@ -291,6 +303,11 @@ echo "Porta Gateway (PORT): $PORT"
 
 ### Inviare Eventi al Producer
 Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instrada al servizio `producer`.
+
+Per vedere se il consumer riceve effettivamente i dati mandati fare:
+```bash
+kubectl logs -l app=consumer -n kafka -f
+```
 
 #### Login Utenti:
 
