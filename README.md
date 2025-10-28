@@ -176,18 +176,48 @@ Installiamo Kong e configuriamolo per monitorare i namespace corretti.
 helm repo add kong https://charts.konghq.com
 helm repo update
 helm install kong kong/kong -n kong
+```
 
-# Aggiorniamo Kong per fargli "vedere" gli ingress negli altri namespace
+Aggiorniamo Kong per fargli "vedere" gli ingress negli altri namespace
+```bash
 helm upgrade kong kong/kong -n kong \
   --set ingressController.watchNamespaces="{kong,kafka,metrics}"
 ```
 
-**Verifica installazione Kong:**
+**Verifica installazione Kong:** 
+
+Controlla i servizi interni al cluster nel namespace 'kong':
 
 ```bash
 kubectl get svc -n kong
+```
+
+L'output dovrebbe essere simile a questo (la riga importante è `kong-kong-proxy`):
+
+```text
+NAME                           TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)
+kong-kong-manager              NodePort       10.109.18.217   <none>        8002:31545/TCP,8445:30670/TCP
+kong-kong-metrics              ClusterIP      10.101.88.235   <none>        10255/TCP,10254/TCP
+kong-kong-proxy                LoadBalancer   10.105.61.105   <pending>     80:31260/TCP,443:32030/TCP
+kong-kong-validation-webhook   ClusterIP      10.110.97.78    <none>        443/TCP
+```
+
+
+Ottieni l'URL pubblico per accedere a Kong dal tuo computer
+```bash
 minikube service kong-kong-proxy -n kong --url
 ```
+
+
+Questo è un comando specifico di Minikube che crea un tunnel di rete dal tuo computer al servizio `kong-kong-proxy` dentro il cluster. L'output stamperà gli URL che puoi usare per inviare richieste all'API Gateway (uno per HTTP e uno per HTTPS):
+
+```text
+http://192.168.49.2:31260
+http://192.168.49.2:32030
+```
+
+
+
 
 ### 5\. Microservizi (Producer, Consumer, Metrics)
 
