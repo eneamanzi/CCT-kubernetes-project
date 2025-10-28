@@ -27,7 +27,6 @@ L'architettura include:
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [Aggiornamento Microservizi](#aggiornamento-microservizi)
     - [6. Deploy Restante (Secret e Applicazioni)](#6-deploy-restante-secret-e-applicazioni)
-    - [6. Deploy Restante (Secret e Applicazioni)](#6-deploy-restante-secret-e-applicazioni-1)
   - [⚙️ Funzionamento](#️-funzionamento)
   - [✨ Caratteristiche (Requisiti Non Funzionali)](#-caratteristiche-requisiti-non-funzionali)
   - [🛠️ Comandi Utili](#️-comandi-utili)
@@ -255,25 +254,6 @@ Per riavviare tutti i deployment in un namespace:
 kubectl rollout restart deployment -n kafka
 kubectl rollout restart deployment -n metrics
 ```
-
-### 6\. Deploy Restante (Secret e Applicazioni)
-
-
-1.  **Crea Secret per Kafka SSL:**
-    Questo secret permette ai pod (Producer/Consumer) di comunicare con Kafka tramite TLS.
-    **IMPORTANTE:** Questo comando va eseguito *prima* di applicare i manifest K8s.
-
-    ```bash
-    kubectl create secret generic kafka-ca-cert -n kafka \
-      --from-literal=ca.crt="$(kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka -o jsonpath='{.data.ca\.crt}' | base64 -d)"
-    ```
-
-2.  **Deploy di tutti i manifest K8s:**
-    Questo comando crea i deployment per Producer, Consumer, Metrics, il Cluster Kafka, gli utenti Kafka e gli Ingress di Kong.
-
-    ```bash
-    kubectl apply -f ./K8s
-    ```
 
 ### 6\. Deploy Restante (Secret e Applicazioni)
 
