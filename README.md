@@ -111,7 +111,7 @@ kubectl create namespace kafka
 Installiamo Strimzi per gestire il cluster Kafka.
 
 ```bash
-helm repo add strimzi [https://strimzi.io/charts/](https://strimzi.io/charts/)
+helm repo add strimzi https://strimzi.io/charts/
 helm repo update
 helm install strimzi-cluster-operator strimzi/strimzi-kafka-operator -n kafka
 ```
@@ -123,7 +123,7 @@ helm install strimzi-cluster-operator strimzi/strimzi-kafka-operator -n kafka
 Installiamo MongoDB usando Helm.
 
 ```bash
-helm repo add bitnami [https://charts.bitnami.com/bitnami](https://charts.bitnami.com/bitnami)
+helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install mongo-mongodb bitnami/mongodb --namespace kafka --version 18.1.1
 ```
 
@@ -173,7 +173,7 @@ Le applicazioni useranno questa stringa di connessione: `mongodb://appuser:appus
 Installiamo Kong e configuriamolo per monitorare i namespace corretti.
 
 ```bash
-helm repo add kong [https://charts.konghq.com](https://charts.konghq.com)
+helm repo add kong https://charts.konghq.com
 helm repo update
 helm install kong kong/kong -n kong
 
