@@ -81,6 +81,7 @@ kubectl create namespace metrics
 
 # Per Kafka, Producer, Consumer, e Mongo
 kubectl create namespace kafka
+```
 
 ### 2\. Strimzi Kafka Operator
 
@@ -260,7 +261,4 @@ Questo comando esegue un test `openssl` dall'interno di un broker Kafka per veri
 ```bash
 kubectl exec -it uni-it-cluster-broker-0 -n kafka -- \
 openssl s_client -connect uni-it-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093 -brief </dev/null
-```
-
-```
 ```
