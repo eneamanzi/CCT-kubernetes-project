@@ -26,6 +26,7 @@ metadata:
   name: metrics-ingress
   namespace: metrics
   annotations:
+    konghq.com/plugins: jwt-auth
     #konghq.com/strip-path: "true"
 spec:
   ingressClassName: kong

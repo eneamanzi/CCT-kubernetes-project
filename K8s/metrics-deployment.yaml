@@ -22,6 +22,14 @@ spec:
           value: "mongodb://appuser:appuserpass@mongo-mongodb.kafka.svc.cluster.local:27017/student_events?authSource=student_events"
         ports:
         - containerPort: 5001
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+
 ---
 apiVersion: v1
 kind: Service

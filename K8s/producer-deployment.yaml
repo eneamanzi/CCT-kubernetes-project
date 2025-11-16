@@ -84,6 +84,13 @@ spec:
         - name: kafka-ca
           mountPath: /etc/ssl/certs/kafka
           readOnly: true
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
       volumes:
       - name: kafka-ca
         secret:
