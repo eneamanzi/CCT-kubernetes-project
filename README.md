@@ -29,6 +29,7 @@ L'architettura include:
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
     - [6. Deploy Restante](#6-deploy-restante)
+    - [7. Creazione Secret per Producer Consumer e Metrics-service](#7-creazione-secret-per-producer-consumer-e-metrics-service)
   - [🛠️ Comandi di Test (con nip.io)](#️-comandi-di-test-con-nipio)
     - [Inviare Eventi al Producer](#inviare-eventi-al-producer)
       - [Login Utenti:](#login-utenti)
@@ -37,6 +38,18 @@ L'architettura include:
       - [Prenotazione Esami:](#prenotazione-esami)
     - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
   - [⚙️ Architettura e Funzionamento (Flusso dei Dati)](#️-architettura-e-funzionamento-flusso-dei-dati)
+  - [Autenticazione JWT (Kong Ingress Controller)](#autenticazione-jwt-kong-ingress-controller)
+    - [Obiettivi e Requisiti](#obiettivi-e-requisiti)
+    - [1. Configurazione Plugin (Server-Side)](#1-configurazione-plugin-server-side)
+      - [1.1 Plugin per Kafka (Producer)](#11-plugin-per-kafka-producer)
+      - [1.2 Plugin per Metrics](#12-plugin-per-metrics)
+    - [2. Identità e Credenziali (Declarative)](#2-identità-e-credenziali-declarative)
+      - [2.1 Kong Consumer](#21-kong-consumer)
+      - [2.2 Secret JWT](#22-secret-jwt)
+    - [3. Generazione del Token (Client-Side)](#3-generazione-del-token-client-side)
+    - [4. Test](#4-test)
+    - [Test Producer](#test-producer)
+    - [Test Metrics](#test-metrics)
   - [✨ Proprietà Non Funzionali (TODO)](#-proprietà-non-funzionali-todo)
     - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
 
@@ -286,6 +299,14 @@ Infine possiamo deployare i manifest restanti
 kubectl apply -f ./K8s
 ```
 
+### 7\. Creazione Secret per Producer Consumer e Metrics-service
+Utilizziamo secert kubernetes invece delle password per permettere a Producer, Consumer e Metrics-service di connettersi a MongoDB.
+```bash
+kubectl create secret generic mongo-creds -n kafka --from-literal=MONGO_URI="$MONGO_URI" 
+
+kubectl create secret generic mongo-creds -n metrics --from-literal=MONGO_URI="$MONGO_URI"
+```
+
 ## 🛠️ Comandi di Test (con nip.io)
 
 Questi comandi utilizzano il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del tuo cluster Minikube, permettendoti di testare gli Ingress basati su host.
@@ -387,7 +408,175 @@ Il flusso logico delle richieste è il seguente:
 | 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
 | 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
 
+## Autenticazione JWT (Kong Ingress Controller)
+In questo progetto abbiamo configurato Kong come API Gateway all’interno di Kubernetes per centralizzare l'autenticazione dei microservizi. L'approccio scelto è puramente dichiarativo: la sicurezza viene gestita tramite oggetti Kubernetes (Ingress, KongPlugin, KongConsumer e Secret) senza interagire direttamente con la Kong Admin API.
 
+L'obiettivo è proteggere gli endpoint esposti (`producer` e `metrics`) bloccando qualsiasi richiesta non autenticata (`401 Unauthorized`) e permettendo l'accesso (`200 OK`) solo se presente un token valido firmato con algoritmo HS256.
+
+
+### Obiettivi e Requisiti
+
+Vogliamo proteggere i seguenti host:
+
+  * **Producer:** `producer.192.168.49.2.nip.io`
+  * **Metrics:** `metrics.192.168.49.2.nip.io/metrics`
+
+**Componenti utilizzati:**
+
+  * 2x `KongPlugin` (uno per namespace: `kafka` e `metrics`)
+  * 1x `KongConsumer` (identità logica del client)
+  * 1x `Secret` Kubernetes (credenziali JWT dichiarative, senza uso di Admin API)
+
+-----
+
+### 1\. Configurazione Plugin (Server-Side)
+
+Kong applica la security a livello di Ingress e dato che gli Ingress risiedono in namespace diversi, è necessario definire un plugin per ciascun namespace.
+
+#### 1.1 Plugin per Kafka (Producer)
+
+File: `k8s/jwt-plugin-kafka.yaml`
+
+```yaml
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+  namespace: kafka
+plugin: jwt
+config:
+  claims_to_verify:
+    - exp
+```
+
+#### 1.2 Plugin per Metrics
+
+File: `k8s/jwt-plugin-metrics.yaml`
+
+```yaml
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+  namespace: metrics
+plugin: jwt
+config:
+  claims_to_verify:
+    - exp
+```
+
+> **Applica i plugin:**
+>
+> ```bash
+> kubectl apply -f k8s/jwt-plugin-kafka.yaml
+> kubectl apply -f k8s/jwt-plugin-metrics.yaml
+> ```
+
+-----
+
+
+### 2\. Identità e Credenziali (Declarative)
+
+Creiamo l'identità del consumatore (`KongConsumer`) e le sue credenziali JWT tramite un `Secret`. Questo approccio evita l'uso delle Admin API di Kong.
+
+Questo è SOLO un oggetto per Kong, NON un utente reale.
+ Serve per collegare una credential JWT ad un “nome”.
+
+#### 2.1 Kong Consumer
+
+File: `k8s/jwt-consumer.yaml`
+
+```yaml
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: exam-client
+  namespace: kafka
+username: exam-client
+credentials:
+  - exam-client-jwt
+```
+
+#### 2.2 Secret JWT
+
+File: `k8s/jwt-credential.yaml`
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: exam-client-jwt
+  namespace: kafka
+  labels:
+    konghq.com/credential: jwt  # Label fondamentale per il discovery di Kong
+type: Opaque
+stringData:
+  kongCredType: jwt
+  key: exam-client-key          # Corrisponde al claim 'iss' nel token
+  secret: supersecret           # Chiave per firmare il token
+  algorithm: HS256
+```
+
+> **Applica le configurazioni:**
+>
+> ```bash
+> kubectl apply -f k8s/jwt-consumer.yaml
+> kubectl apply -f k8s/jwt-credential.yaml
+> ```
+
+-----
+
+### 3\. Generazione del Token (Client-Side)
+
+Per accedere agli endpoint, è necessario generare un token firmato con la chiave segreta definita sopra utilizzando lo script Python `gen-jwt.py`.
+
+
+Esegui lo script e salva il token generato in una variabile d'ambiente `TOKEN`.
+```bash
+export TOKEN=$(python3 gen_jwt.py)
+```
+
+### 4\. Test
+
+### Test Producer
+
+**Scenario: Senza Token**
+Risultato Atteso: `401 Unauthorized`
+
+```bash
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
+  -d '{"user":"test"}'
+```
+
+**Scenario: Con Token**
+Risultato Atteso: `200 OK`
+
+```bash
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"auth-user"}'
+```
+
+### Test Metrics
+
+**Scenario: Senza Token**
+Risultato Atteso: `401 Unauthorized`
+
+```bash
+curl -i http://metrics.$IP.nip.io:$PORT/metrics
+```
+
+**Scenario: Con Token**
+Risultato Atteso: `200 OK` (Lista metriche Prometheus)
+
+```bash
+curl -i http://metrics.$IP.nip.io:$PORT/metrics/logins \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+
+-----------------------------------
 
 ## ✨ Proprietà Non Funzionali (TODO)
 

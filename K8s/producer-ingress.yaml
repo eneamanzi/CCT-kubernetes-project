@@ -26,7 +26,7 @@ metadata:
   name: producer-ingress
   namespace: kafka
   annotations:
-    konghq.com/plugins: jwt-auth
+    konghq.com/plugins: jwt-auth  #ABILITA AUTENTICAZIONE CON JWT
     #konghq.com/strip-path: "true"
 spec:
   ingressClassName: kong  
