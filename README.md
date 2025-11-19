@@ -14,10 +14,10 @@ L'architettura include:
 
 - [Progetto Kubernetes per il corso CCT](#progetto-kubernetes-per-il-corso-cct)
   - [Indice](#indice)
-  - [📋 Prerequisiti](#-prerequisiti)
+  - [Prerequisiti](#prerequisiti)
     - [Necessari](#necessari)
     - [Opzionali](#opzionali)
-  - [🚀 Guida all'Installazione](#-guida-allinstallazione)
+  - [Guida all'Installazione](#guida-allinstallazione)
     - [Setup Iniziale del Cluster](#setup-iniziale-del-cluster)
     - [1. Creazione Namespace](#1-creazione-namespace)
     - [2. Strimzi Kafka Operator](#2-strimzi-kafka-operator)
@@ -30,14 +30,6 @@ L'architettura include:
       - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
     - [6. Deploy Restante](#6-deploy-restante)
     - [7. Creazione Secret per Producer Consumer e Metrics-service](#7-creazione-secret-per-producer-consumer-e-metrics-service)
-  - [🛠️ Comandi di Test (con nip.io)](#️-comandi-di-test-con-nipio)
-    - [Inviare Eventi al Producer](#inviare-eventi-al-producer)
-      - [Login Utenti:](#login-utenti)
-      - [Risultati Quiz:](#risultati-quiz)
-      - [Download Materiali:](#download-materiali)
-      - [Prenotazione Esami:](#prenotazione-esami)
-    - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
-  - [⚙️ Architettura e Funzionamento (Flusso dei Dati)](#️-architettura-e-funzionamento-flusso-dei-dati)
   - [Autenticazione JWT (Kong Ingress Controller)](#autenticazione-jwt-kong-ingress-controller)
     - [Obiettivi e Requisiti](#obiettivi-e-requisiti)
     - [1. Configurazione Plugin (Server-Side)](#1-configurazione-plugin-server-side)
@@ -48,13 +40,21 @@ L'architettura include:
       - [2.2 Secret JWT](#22-secret-jwt)
     - [3. Generazione del Token (Client-Side)](#3-generazione-del-token-client-side)
     - [4. Test](#4-test)
-    - [Test Producer](#test-producer)
-    - [Test Metrics](#test-metrics)
-  - [✨ Proprietà Non Funzionali (TODO)](#-proprietà-non-funzionali-todo)
+      - [Test Producer](#test-producer)
+      - [Test Metrics](#test-metrics)
+  - [Comandi di Test (con nip.io)](#comandi-di-test-con-nipio)
+    - [Inviare Eventi al Producer](#inviare-eventi-al-producer)
+      - [Login Utenti:](#login-utenti)
+      - [Risultati Quiz:](#risultati-quiz)
+      - [Download Materiali:](#download-materiali)
+      - [Prenotazione Esami:](#prenotazione-esami)
+    - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
+  - [Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT](#architettura-e-funzionamento-flusso-dei-dati---todo-adattare-ad-autenticazione-jwt)
+  - [Proprietà Non Funzionali (TODO)](#proprietà-non-funzionali-todo)
     - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
 
 
-## 📋 Prerequisiti
+## Prerequisiti
 
 ### Necessari
 * **Docker Engine** (NON Docker Desktop). [Guida installazione Ubuntu](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
@@ -67,7 +67,7 @@ L'architettura include:
 
 ---
 
-## 🚀 Guida all'Installazione
+## Guida all'Installazione
 
 Segui questi passaggi per configurare e avviare l'intero stack applicativo.
 
@@ -78,7 +78,6 @@ docker system prune -a -f
 ```
 
 ### Setup Iniziale del Cluster
-
 
 1.  **Avviare Minikube:**
     ```bash
@@ -134,7 +133,7 @@ kubectl apply -f ./K8s/kafka-topic.yaml
 kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka
 ```
 
-✅ *Kafka è configurato (tramite i file YAML in `K8s/`) per usare TLS e autenticazione SCRAM-SHA-512.*
+*Kafka è configurato (tramite i file YAML in `K8s/`) per usare TLS e autenticazione SCRAM-SHA-512.*
 
 #### 2.2\. Crea Secret per Kafka SSL (per le App):
 
@@ -253,9 +252,6 @@ http://192.168.49.2:31260
 http://192.168.49.2:32030
 ```
 
-
-
-
 ### 5\. Microservizi (Producer, Consumer, Metrics)
 
 Dobbiamo buildare le immagini Docker dei nostri microservizi Python.
@@ -306,107 +302,6 @@ kubectl create secret generic mongo-creds -n kafka --from-literal=MONGO_URI="$MO
 
 kubectl create secret generic mongo-creds -n metrics --from-literal=MONGO_URI="$MONGO_URI"
 ```
-
-## 🛠️ Comandi di Test (con nip.io)
-
-Questi comandi utilizzano il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del tuo cluster Minikube, permettendoti di testare gli Ingress basati su host.
-
-  **Esporta l'IP del Cluster e la Porta del Gateway:**
-Esegui questi comandi nel tuo terminale per impostare le variabili d'ambiente.
-
-```bash
-IP=$(minikube ip)
-# Questo comando estrae solo il numero di porta dall'URL completo
-PORT=$(minikube service kong-kong-proxy -n kong --url | head -n 1 | awk -F: '{print $3}')
-echo "IP Cluster (IP):    $IP"
-echo "Porta Gateway (PORT): $PORT"
-```
-
-### Inviare Eventi al Producer
-Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instrada al servizio `producer`.
-
-Per vedere se il consumer riceve effettivamente i dati mandati fare:
-```bash
-kubectl logs -l app=consumer -n kafka -f
-```
-
-#### Login Utenti:
-
-```bash
-curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "alice"}'
-
-curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "bob"}'
-
-curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "charlie"}'
-```
-
-#### Risultati Quiz:
-
-```bash
-curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "alice", "quiz_id": "math101", "score": 24, "course_id": "math"}'
-
-curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "bob", "quiz_id": "math101", "score": 15, "course_id": "math"}'
-
-curl -X POST http://producer.$IP.nip.io:$PORT/event/quiz -H "Content-Type: application/json" -d '{"user_id": "charlie", "quiz_id": "phys101", "score": 28, "course_id": "physics"}'
-```
-
-#### Download Materiali:
-
-```bash
-curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "alice", "materiale_id": "pdf1", "course_id": "math"}'
-
-curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "bob", "materiale_id": "pdf1", "course_id": "math"}'
-
-curl -X POST http://producer.$IP.nip.io:$PORT/event/download -H "Content-Type: application/json" -d '{"user_id": "charlie", "materiale_id": "pdf2", "course_id": "physics"}'
-```
-
-#### Prenotazione Esami:
-
-```bash
-curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "alice", "esame_id": "math1", "course_id": "math"}'
-
-curl -X POST http://producer.$IP.nip.io:$PORT/event/exam -H "Content-Type: application/json" -d '{"user_id": "bob", "esame_id": "phys1", "course_id": "physics"}'
-```
-
-### Leggere le Metriche (Metrics-service)
-Queste richieste `curl` colpiscono l'host `metrics.$IP.nip.io`, che Kong instrada al servizio `metrics-service`.
-
-```bash
-curl http://metrics.$IP.nip.io:$PORT/metrics/logins
-curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/success-rate
-curl http://metrics.$IP.nip.io:$PORT/metrics/quiz/average-score
-curl http://metrics.$IP.nip.io:$PORT/metrics/downloads
-curl http://metrics.$IP.nip.io:$PORT/metrics/exams
-```
-
-## ⚙️ Architettura e Funzionamento (Flusso dei Dati)
-
-Una volta completato il deploy, il sistema gestisce due flussi principali tramite l'API Gateway Kong:
-
-  * **Richieste POST (`/event`)**
-
-    1.  Le richieste (es. `POST /event/some-data`) vengono inviate a Kong.
-    2.  Kong le inoltra al microservizio **Producer**.
-    3.  Il Producer valida i dati e li pubblica sulla coda Kafka (`student-events`).
-    4.  Il **Consumer** (in ascolto sulla coda) riceve il messaggio.
-    5.  Il Consumer salva i dati nel database MongoDB.
-
-  * **Richieste GET (`/metrics`)**
-
-    1.  Le richieste `GET /metrics` arrivano a Kong.
-    2.  Kong le inoltra al **Metrics-service**.
-    3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
-    4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
-
-
-Il flusso logico delle richieste è il seguente:
-| Step | Componente | Azione |
-| :--- | :--- | :--- |
-| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
-| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
-| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
-| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
-| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
 
 ## Autenticazione JWT (Kong Ingress Controller)
 In questo progetto abbiamo configurato Kong come API Gateway all’interno di Kubernetes per centralizzare l'autenticazione dei microservizi. L'approccio scelto è puramente dichiarativo: la sicurezza viene gestita tramite oggetti Kubernetes (Ingress, KongPlugin, KongConsumer e Secret) senza interagire direttamente con la Kong Admin API.
@@ -474,7 +369,6 @@ config:
 
 -----
 
-
 ### 2\. Identità e Credenziali (Declarative)
 
 Creiamo l'identità del consumatore (`KongConsumer`) e le sue credenziali JWT tramite un `Secret`. Questo approccio evita l'uso delle Admin API di Kong.
@@ -524,8 +418,6 @@ stringData:
 > kubectl apply -f k8s/jwt-credential.yaml
 > ```
 
------
-
 ### 3\. Generazione del Token (Client-Side)
 
 Per accedere agli endpoint, è necessario generare un token firmato con la chiave segreta definita sopra utilizzando lo script Python `gen-jwt.py`.
@@ -538,7 +430,7 @@ export TOKEN=$(python3 gen_jwt.py)
 
 ### 4\. Test
 
-### Test Producer
+#### Test Producer
 
 **Scenario: Senza Token**
 Risultato Atteso: `401 Unauthorized`
@@ -558,7 +450,7 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
   -d '{"user_id":"auth-user"}'
 ```
 
-### Test Metrics
+#### Test Metrics
 
 **Scenario: Senza Token**
 Risultato Atteso: `401 Unauthorized`
@@ -575,10 +467,146 @@ curl -i http://metrics.$IP.nip.io:$PORT/metrics/logins \
   -H "Authorization: Bearer $TOKEN"
 ```
 
+## Comandi di Test (con nip.io)
 
------------------------------------
+Questi comandi utilizzano il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del tuo cluster Minikube, permettendoti di testare gli Ingress basati su host.
 
-## ✨ Proprietà Non Funzionali (TODO)
+  **Esporta l'IP del Cluster e la Porta del Gateway:**
+Esegui questi comandi nel tuo terminale per impostare le variabili d'ambiente.
+
+```bash
+IP=$(minikube ip)
+# Questo comando estrae solo il numero di porta dall'URL completo
+PORT=$(minikube service kong-kong-proxy -n kong --url | head -n 1 | awk -F: '{print $3}')
+echo "IP Cluster (IP):    $IP"
+echo "Porta Gateway (PORT): $PORT"
+```
+
+### Inviare Eventi al Producer
+Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instrada al servizio `producer`.
+
+Per vedere se il consumer riceve effettivamente i dati mandati fare:
+```bash
+kubectl logs -l app=consumer -n kafka -f
+```
+
+#### Login Utenti:
+
+
+```bash
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "alice"}'
+
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "bob"}'
+
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "charlie"}'
+```
+
+#### Risultati Quiz:
+
+```bash
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/quiz \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "alice", "quiz_id": "math101", "score": 24, "course_id": "math"}'
+
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/quiz \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "bob", "quiz_id": "math101", "score": 15, "course_id": "math"}'
+
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/quiz \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "charlie", "quiz_id": "phys101", "score": 28, "course_id": "physics"}'
+```
+
+#### Download Materiali:
+
+```bash
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/download \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "alice", "materiale_id": "pdf1", "course_id": "math"}'
+
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/download \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "bob", "materiale_id": "pdf1", "course_id": "math"}'
+
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/download \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "charlie", "materiale_id": "pdf2", "course_id": "physics"}'
+```
+
+#### Prenotazione Esami:
+
+```bash
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/exam \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "alice", "esame_id": "math1", "course_id": "math"}'
+
+curl -i -X POST http://producer.$IP.nip.io:$PORT/event/exam \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "bob", "esame_id": "phys1", "course_id": "physics"}'
+```
+
+### Leggere le Metriche (Metrics-service)
+Queste richieste `curl` colpiscono l'host `metrics.$IP.nip.io`, che Kong instrada al servizio `metrics-service`.
+
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metrics/logins
+
+curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metrics/quiz/success-rate
+
+curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metrics/quiz/average-score
+
+curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metrics/downloads
+
+curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metrics/exams
+```
+
+## Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT
+
+Una volta completato il deploy, il sistema gestisce due flussi principali tramite l'API Gateway Kong:
+
+  * **Richieste POST (`/event`)**
+
+    1.  Le richieste (es. `POST /event/some-data`) vengono inviate a Kong.
+    2.  Kong le inoltra al microservizio **Producer**.
+    3.  Il Producer valida i dati e li pubblica sulla coda Kafka (`student-events`).
+    4.  Il **Consumer** (in ascolto sulla coda) riceve il messaggio.
+    5.  Il Consumer salva i dati nel database MongoDB.
+
+  * **Richieste GET (`/metrics`)**
+
+    1.  Le richieste `GET /metrics` arrivano a Kong.
+    2.  Kong le inoltra al **Metrics-service**.
+    3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
+    4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
+
+
+Il flusso logico delle richieste è il seguente:
+| Step | Componente | Azione |
+| :--- | :--- | :--- |
+| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
+| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
+| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
+| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
+| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
+
+## Proprietà Non Funzionali (TODO)
 
   * **Sicurezza**: La comunicazione tra Producer, Consumer e Kafka è protetta da **TLS**. L'autenticazione a Kafka avviene tramite **SASL SCRAM-SHA-512**.
   * **Fault Tolerance**: Grazie a Kafka, se il Consumer smette di funzionare, i messaggi rimangono nella coda pronti per essere processati non appena il Consumer torna online.
