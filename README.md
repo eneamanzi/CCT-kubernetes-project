@@ -16,7 +16,9 @@ L'architettura include:
   - [Prerequisiti](#prerequisiti)
     - [Necessari](#necessari)
     - [Opzionali](#opzionali)
-  - [Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT](#architettura-e-funzionamento-flusso-dei-dati---todo-adattare-ad-autenticazione-jwt)
+  - [Architettura e Funzionamento](#architettura-e-funzionamento)
+    - [1. Flusso di Ingestione (Scrittura)](#1-flusso-di-ingestione-scrittura)
+    - [2. Flusso di Analisi (Lettura)](#2-flusso-di-analisi-lettura)
   - [Guida all'Installazione](#guida-allinstallazione)
     - [Setup Iniziale del Cluster](#setup-iniziale-del-cluster)
     - [1. Creazione Namespace](#1-creazione-namespace)
@@ -53,7 +55,7 @@ L'architettura include:
     - [Prerequisites](#prerequisites)
     - [1. **Security \& Secrets Management**](#1-security--secrets-management)
     - [2. **Resilience, Fault Tolerance \& High Availability**](#2-resilience-fault-tolerance--high-availability)
-      - [2.1. Fault Tollerance: Consumer Failure (Buffering)](#21-fault-tollerance-consumer-failure-buffering)
+      - [2.1. Fault Tolerance: Consumer Failure (Buffering)](#21-fault-tolerance-consumer-failure-buffering)
       - [2.2. High Availability: Self-Healing del Producer](#22-high-availability-self-healing-del-producer)
     - [3. **Scalabilità \& Load Balancing (senza HPA)**](#3-scalabilità--load-balancing-senza-hpa)
     - [4. **Horizontal Pod Autoscaler (HPA)**](#4-horizontal-pod-autoscaler-hpa)
@@ -65,7 +67,7 @@ L'architettura include:
 ## Prerequisiti
 
 ### Necessari
-* **Docker Engine** (NON Docker Desktop). [Guida installazione Ubuntu](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
+* **Docker Engine** (NON Docker Desktop). [Guida installazione Ubuntu](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository) 
 * **Minikube**
 * **kubectl**
 
@@ -74,35 +76,23 @@ L'architettura include:
 * **k9s**
   
 ---
+## Architettura e Funzionamento
 
-## Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT
+Il sistema implementa un pattern **Event-Driven** con API Gateway per l'autenticazione.
 
-Una volta completato il deploy, il sistema gestisce due flussi principali tramite l'API Gateway Kong:
+### 1. Flusso di Ingestione (Scrittura)
+1.  **Client HTTP**: Invia una richiesta `POST /event/...` all'API Gateway (Kong).
+2.  **Kong Gateway**: Intercetta la richiesta e verifica il token JWT nell'header `Authorization`.
+    * **Token Valido**: La richiesta viene inoltrata al servizio **Producer**.
+    * **Token Invalido/Assente**: Kong restituisce immediatamente `401 Unauthorized`.
+3.  **Producer**: Riceve il payload JSON, aggiunge metadati (UUID, timestamp) e pubblica il messaggio sul topic `student-events` di Kafka.
+4.  **Kafka**: Persiste il messaggio in modo distribuito e replicato.
+5.  **Consumer**: Legge il messaggio dal topic e salva il documento nella collezione `events` di **MongoDB**.
 
-  * **Richieste POST (`/event`)**
-
-    1.  Le richieste (es. `POST /event/some-data`) vengono inviate a Kong.
-    2.  Kong le inoltra al microservizio **Producer**.
-    3.  Il Producer valida i dati e li pubblica sulla coda Kafka (`student-events`).
-    4.  Il **Consumer** (in ascolto sulla coda) riceve il messaggio.
-    5.  Il Consumer salva i dati nel database MongoDB.
-
-  * **Richieste GET (`/metrics`)**
-
-    1.  Le richieste `GET /metrics` arrivano a Kong.
-    2.  Kong le inoltra al **Metrics-service**.
-    3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
-    4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
-
-
-Il flusso logico delle richieste è il seguente:
-| Step | Componente | Azione |
-| :--- | :--- | :--- |
-| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
-| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
-| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
-| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
-| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
+### 2. Flusso di Analisi (Lettura)
+1.  **Client HTTP**: Invia una richiesta `GET /metrics/...` a Kong.
+2.  **Kong Gateway**: Esegue la validazione JWT.
+3.  **Metrics-service**: Riceve la richiesta, esegue query di aggregazione su MongoDB e restituisce le statistiche.
 
 ---
 
@@ -463,9 +453,9 @@ stringData:
 > ```
 
 ### 3\. Generazione del Token (Client-Side)
-
 Per accedere agli endpoint, è necessario generare un token firmato con la chiave segreta definita sopra utilizzando lo script Python `gen-jwt.py`.
 
+> **Nota di Sicurezza:** Lo script `gen-jwt.py` contiene il segreto condiviso hardcodato per semplicità dimostrativa. In un ambiente di produzione, questa chiave dovrebbe essere iniettata tramite variabili d'ambiente sicure o sistemi di gestione dei segreti (es. Vault).
 
 Esegui lo script e salva il token generato in una variabile d'ambiente `TOKEN`.
 ```bash
@@ -683,7 +673,7 @@ echo "Target Environment: http://$IP:$PORT"
 
 **Obiettivo:** Dimostrare che il sistema non perde dati in caso di crash dei componenti (Consumer o Broker).
 
-#### 2.1\. Fault Tollerance: Consumer Failure (Buffering)
+#### 2.1\. Fault Tolerance: Consumer Failure (Buffering)
 
 Questo scenario simula il crash improvviso del Consumer mentre i dati continuano ad arrivare al Producer. Dimostra la capacità di Kafka di fungere da buffer persistente.
 
@@ -776,6 +766,8 @@ Questo test verifica la resilienza dell'infrastruttura simulando un crash improv
 ### 3\. **Scalabilità & Load Balancing (senza HPA)**
 
 **Obiettivo:** Verificare che il traffico sia distribuito tra le repliche e che il sistema sopravviva alla perdita di un nodo applicativo.
+
+> **ATTENZIONE:** Assicurati che l'Horizontal Pod Autoscaler (HPA) **NON** sia attivo prima di eseguire questo test. Se hai già applicato `hpa.yaml`, eliminalo con `kubectl delete -f K8s/hpa.yaml` per evitare che Kubernetes interferisca con il ridimensionamento manuale.
 
 Questo test simula uno scenario di alto carico per verificare due comportamenti critici simultaneamente:
 
