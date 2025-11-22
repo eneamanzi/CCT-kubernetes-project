@@ -15,8 +15,8 @@ L'architettura include:
   - [Indice](#indice)
   - [Prerequisiti](#prerequisiti)
   - [Architettura e Funzionamento](#architettura-e-funzionamento)
-    - [1. Flusso di Ingestione (Scrittura)](#1-flusso-di-ingestione-scrittura)
-    - [2. Flusso di Analisi (Lettura)](#2-flusso-di-analisi-lettura)
+    - [Flusso di Ingestione (Scrittura)](#flusso-di-ingestione-scrittura)
+    - [Flusso di Analisi (Lettura)](#flusso-di-analisi-lettura)
   - [Guida all'Installazione](#guida-allinstallazione)
     - [0. Setup Iniziale del Cluster](#0-setup-iniziale-del-cluster)
     - [1. Creazione Namespace](#1-creazione-namespace)
@@ -27,26 +27,20 @@ L'architettura include:
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
     - [6. Creazione Secret per Producer Consumer e Metrics-service](#6-creazione-secret-per-producer-consumer-e-metrics-service)
-    - [7. TODO - Deploy Restante](#7-todo---deploy-restante)
-  - [Autenticazione JWT (Kong Ingress Controller)](#autenticazione-jwt-kong-ingress-controller)
-    - [Obiettivi e Requisiti](#obiettivi-e-requisiti)
-    - [1. Configurazione Plugin (Server-Side)](#1-configurazione-plugin-server-side)
-      - [1.1 Plugin per Kafka (Producer)](#11-plugin-per-kafka-producer)
-      - [1.2 Plugin per Metrics](#12-plugin-per-metrics)
-    - [2. Identità e Credenziali (Declarative)](#2-identità-e-credenziali-declarative)
-      - [2.1 Kong Consumer](#21-kong-consumer)
-      - [2.2 Secret JWT](#22-secret-jwt)
-    - [3. Generazione del Token (Client-Side)](#3-generazione-del-token-client-side)
-    - [4. Test](#4-test)
-      - [Test Producer](#test-producer)
-      - [Test Metrics](#test-metrics)
-  - [Comandi di Test (con nip.io)](#comandi-di-test-con-nipio)
-    - [Inviare Eventi al Producer](#inviare-eventi-al-producer)
-      - [Login Utenti:](#login-utenti)
-      - [Risultati Quiz:](#risultati-quiz)
-      - [Download Materiali:](#download-materiali)
-      - [Prenotazione Esami:](#prenotazione-esami)
-    - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
+    - [7. Autenticazione JWT](#7-autenticazione-jwt)
+      - [7.1. Configurazione JWT: Kong Consumer \& Credentials](#71-configurazione-jwt-kong-consumer--credentials)
+      - [7.2. Attivazione Plugin di Sicurezza](#72-attivazione-plugin-di-sicurezza)
+      - [7.3. Generazione Token di Accesso (Client-Side)](#73-generazione-token-di-accesso-client-side)
+    - [8. Deploy Restante dei Microservizi](#8-deploy-restante-dei-microservizi)
+  - [Comandi di Test: verifica del funzionamento + utility](#comandi-di-test-verifica-del-funzionamento--utility)
+    - [1. Setup Variabili Ambiente (IP, PORT, TOKEN)](#1-setup-variabili-ambiente-ip-port-token)
+    - [2. Verifica Autenticazione (Security Check)](#2-verifica-autenticazione-security-check)
+    - [3. Inviare Eventi al Producer](#3-inviare-eventi-al-producer)
+      - [Login Utenti](#login-utenti)
+      - [Risultati Quiz](#risultati-quiz)
+      - [Download Materiali](#download-materiali)
+      - [Prenotazione Esami](#prenotazione-esami)
+    - [4. Leggere le Metriche (Metrics-service)](#4-leggere-le-metriche-metrics-service)
   - [Non-Functional Property (NFP)](#non-functional-property-nfp)
     - [Prerequisites](#prerequisites)
     - [1. **Security \& Secrets Management**](#1-security--secrets-management)
@@ -76,7 +70,7 @@ L'architettura include:
 
 Il sistema implementa un pattern **Event-Driven** con API Gateway per l'autenticazione.
 
-### 1. Flusso di Ingestione (Scrittura)
+### Flusso di Ingestione (Scrittura)
 1.  **Client HTTP**: Invia una richiesta `POST /event/...` all'API Gateway (Kong).
 2.  **Kong Gateway**: Intercetta la richiesta e verifica il token JWT nell'header `Authorization`.
     * **Token Valido**: La richiesta viene inoltrata al servizio **Producer**.
@@ -85,7 +79,7 @@ Il sistema implementa un pattern **Event-Driven** con API Gateway per l'autentic
 4.  **Kafka**: Persiste il messaggio in modo distribuito e replicato.
 5.  **Consumer**: Legge il messaggio dal topic e salva il documento nella collezione `events` di **MongoDB**.
 
-### 2. Flusso di Analisi (Lettura)
+### Flusso di Analisi (Lettura)
 1.  **Client HTTP**: Invia una richiesta `GET /metrics/...` a Kong.
 2.  **Kong Gateway**: Esegue la validazione JWT.
 3.  **Metrics-service**: Riceve la richiesta, esegue query di aggregazione su MongoDB e restituisce le statistiche.
@@ -324,22 +318,9 @@ kubectl create secret generic mongo-creds -n metrics --from-literal=MONGO_URI="$
 ```
 </div>
 
-### 7\. TODO - Deploy Restante
 
-Infine possiamo deployare i manifest restanti
-```bash
-kubectl apply -f ./K8s
-```
-
-
-
-## Autenticazione JWT (Kong Ingress Controller)
-In questo progetto abbiamo configurato Kong come API Gateway all’interno di Kubernetes per centralizzare l'autenticazione dei microservizi. L'approccio scelto è puramente dichiarativo: la sicurezza viene gestita tramite oggetti Kubernetes (Ingress, KongPlugin, KongConsumer e Secret) senza interagire direttamente con la Kong Admin API.
-
+### 7\. Autenticazione JWT
 L'obiettivo è proteggere gli endpoint esposti (`producer` e `metrics`) bloccando qualsiasi richiesta non autenticata (`401 Unauthorized`) e permettendo l'accesso (`200 OK`) solo se presente un token valido firmato con algoritmo HS256.
-
-
-### Obiettivi e Requisiti
 
 Vogliamo proteggere i seguenti host:
 
@@ -352,179 +333,128 @@ Vogliamo proteggere i seguenti host:
   * 1x `KongConsumer` (identità logica del client)
   * 1x `Secret` Kubernetes (credenziali JWT dichiarative, senza uso di Admin API)
 
------
 
-### 1\. Configurazione Plugin (Server-Side)
+#### 7.1\. Configurazione JWT: Kong Consumer & Credentials
 
-Kong applica la security a livello di Ingress e dato che gli Ingress risiedono in namespace diversi, è necessario definire un plugin per ciascun namespace.
+Prima di esporre i servizi, configuriamo l'autenticazione. Creiamo l'identità del "consumatore" (è SOLO un oggetto per Kong, NON un utente reale. Serve per collegare una credential JWT ad un “nome”) e le credenziali JWT necessarie per validare i token.
 
-#### 1.1 Plugin per Kafka (Producer)
+> **Nota:** Questo passaggio crea un `KongConsumer` e un `Secret` Kubernetes contenente la chiave condivisa (HS256) per la firma dei token.
 
-File: `k8s/jwt-plugin-kafka.yaml`
+```bash
+# Crea il Secret con la chiave condivisa
+kubectl apply -f ./K8s/jwt-credential.yaml
 
-```yaml
-apiVersion: configuration.konghq.com/v1
-kind: KongPlugin
-metadata:
-  name: jwt-auth
-  namespace: kafka
-plugin: jwt
-config:
-  claims_to_verify:
-    - exp
+# Crea l'identità del consumatore "exam-client"
+kubectl apply -f ./K8s/jwt-consumer.yaml
 ```
 
-#### 1.2 Plugin per Metrics
+#### 7.2\. Attivazione Plugin di Sicurezza
+Kong applica la sicurezza tramite plugin associati ai namespace o agli Ingress. Poiché abbiamo Ingress in namespace diversi, attiviamo il plugin `jwt` specificamente per ciascuno di essi.
 
-File: `k8s/jwt-plugin-metrics.yaml`
+```bash
+# Attiva il plugin JWT per il namespace 'kafka' (protegge il Producer)
+kubectl apply -f ./K8s/jwt-plugin-kafka.yaml
 
-```yaml
-apiVersion: configuration.konghq.com/v1
-kind: KongPlugin
-metadata:
-  name: jwt-auth
-  namespace: metrics
-plugin: jwt
-config:
-  claims_to_verify:
-    - exp
+# Attiva il plugin JWT per il namespace 'metrics' (protegge il Metrics-service)
+kubectl apply -f ./K8s/jwt-plugin-metrics.yaml
 ```
 
-> **Applica i plugin:**
->
-> ```bash
-> kubectl apply -f k8s/jwt-plugin-kafka.yaml
-> kubectl apply -f k8s/jwt-plugin-metrics.yaml
-> ```
+#### 7.3\. Generazione Token di Accesso (Client-Side)
 
------
+Il sistema è ora attivo e protetto ("Secure by Default"). Qualsiasi richiesta effettuata senza un token valido riceverà un errore `401 Unauthorized`.
 
-### 2\. Identità e Credenziali (Declarative)
+Per interagire con le API, è necessario generare un token JWT firmato con la stessa chiave segreta caricata al punto [7.1. Configurazione JWT: Kong Consumer & Credentials](#71-configurazione-jwt-kong-consumer--credentials)
 
-Creiamo l'identità del consumatore (`KongConsumer`) e le sue credenziali JWT tramite un `Secret`. Questo approccio evita l'uso delle Admin API di Kong.
+**Genera il token:** Utilizza lo script Python incluso nella root del progetto (richiede la libreria `pyjwt`) per generare un token e salvarlo in una varaibile d'ambiente:
 
-Questo è SOLO un oggetto per Kong, NON un utente reale.
- Serve per collegare una credential JWT ad un “nome”.
-
-#### 2.1 Kong Consumer
-
-File: `k8s/jwt-consumer.yaml`
-
-```yaml
-apiVersion: configuration.konghq.com/v1
-kind: KongConsumer
-metadata:
-  name: exam-client
-  namespace: kafka
-username: exam-client
-credentials:
-  - exam-client-jwt
-```
-
-#### 2.2 Secret JWT
-
-File: `k8s/jwt-credential.yaml`
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: exam-client-jwt
-  namespace: kafka
-  labels:
-    konghq.com/credential: jwt  # Label fondamentale per il discovery di Kong
-type: Opaque
-stringData:
-  kongCredType: jwt
-  key: exam-client-key          # Corrisponde al claim 'iss' nel token
-  secret: supersecret           # Chiave per firmare il token
-  algorithm: HS256
-```
-
-> **Applica le configurazioni:**
->
-> ```bash
-> kubectl apply -f k8s/jwt-consumer.yaml
-> kubectl apply -f k8s/jwt-credential.yaml
-> ```
-
-### 3\. Generazione del Token (Client-Side)
-Per accedere agli endpoint, è necessario generare un token firmato con la chiave segreta definita sopra utilizzando lo script Python `gen-jwt.py`.
-
-> **Nota di Sicurezza:** Lo script `gen-jwt.py` contiene il segreto condiviso hardcodato per semplicità dimostrativa. In un ambiente di produzione, questa chiave dovrebbe essere iniettata tramite variabili d'ambiente sicure o sistemi di gestione dei segreti (es. Vault).
-
-Esegui lo script e salva il token generato in una variabile d'ambiente `TOKEN`.
 ```bash
 export TOKEN=$(python3 gen_jwt.py)
+echo "Token generato: $TOKEN"
 ```
+> **Nota di Sicurezza:** Lo script `gen-jwt.py` contiene il segreto condiviso hardcodato per semplicità dimostrativa. In un ambiente di produzione, questa chiave dovrebbe essere iniettata tramite variabili d'ambiente sicure o sistemi di gestione dei segreti (es. Vault).
 
-### 4\. Test
 
-#### Test Producer
+### 8\. Deploy Restante dei Microservizi
 
-**Scenario: Senza Token**
-Risultato Atteso: `401 Unauthorized`
+Ora che l'infrastruttura di base e la sicurezza sono configurate, possiamo deployare i restanti manifest (Deployment, Service, Ingress).
+Gli Ingress (`producer-ingress` e `metrics-ingress`) sono già configurati con l'annotazione `konghq.com/plugins: jwt-auth`, quindi saranno protetti immediatamente al momento della creazione.
 
 ```bash
-curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
-  -d '{"user":"test"}'
+kubectl apply -f ./K8s
 ```
 
-**Scenario: Con Token**
-Risultato Atteso: `200 OK`
+*(Questo comando applicherà tutti i file YAML nella cartella K8s, aggiornando quelli già esistenti e creando quelli nuovi).*
 
-```bash
-curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"user_id":"auth-user"}'
-```
 
-#### Test Metrics
 
-**Scenario: Senza Token**
-Risultato Atteso: `401 Unauthorized`
+----------------------
+## Comandi di Test: verifica del funzionamento + utility
+Utilizzeremo `curl` e il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del cluster Minikube, permettendoci di testare gli Ingress basati su host.
 
-```bash
-curl -i http://metrics.$IP.nip.io:$PORT/metrics
-```
-
-**Scenario: Con Token**
-Risultato Atteso: `200 OK` (Lista metriche Prometheus)
-
-```bash
-curl -i http://metrics.$IP.nip.io:$PORT/metrics/logins \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-## Comandi di Test (con nip.io)
-
-Questi comandi utilizzano il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del tuo cluster Minikube, permettendoti di testare gli Ingress basati su host.
-
-  **Esporta l'IP del Cluster e la Porta del Gateway:**
-Esegui questi comandi nel tuo terminale per impostare le variabili d'ambiente.
+### 1\. Setup Variabili Ambiente (IP, PORT, TOKEN)
+Prima di iniziare, esportiamo le variabili necessarie per non dover modificare manualmente ogni comando `curl`.
 
 ```bash
 export IP=$(minikube ip)
-# Questo comando estrae solo il numero di porta dall'URL completo
 export PORT=$(minikube service kong-kong-proxy -n kong --url | head -n 1 | awk -F: '{print $3}')
+
 export TOKEN=$(python3 gen_jwt.py)
 
-echo "IP Cluster (IP):    $IP"
-echo "Porta Gateway (PORT): $PORT"
+echo "Target (IP:PORT): $IP:$PORT"
+echo "Token:  $TOKEN"
 ```
 
-### Inviare Eventi al Producer
+### 2\. Verifica Autenticazione (Security Check)
+
+Verifichiamo che il Gateway blocchi correttamente le richieste non autorizzate e accetti quelle valide.
+
+**Scenario A: Accesso Negato (Senza Token)**
+
+1. **Proviamo a contattare  `producer` senza credenziali.**
+    ```bash
+    curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
+      -H "Content-Type: application/json" \
+      -d '{"user_id":"unauthorized-user"}'
+    ```
+    > **Risultato Atteso:** `HTTP/1.1 401 Unauthorized`
+
+2. **Proviamo a contattare `metrics` senza credenziali.**
+    ```bash
+    curl -i http://metrics.$IP.nip.io:$PORT/metrics
+    ```
+    > **Risultato Atteso:** `401 Unauthorized`
+
+**Scenario B: Accesso Consentito (Con Token)**
+Riprova le stesse richiesta aggiungendo l'header `Authorization` con il relativo TOKEN.
+
+1. **Proviamo a contattare  `producer`**
+    ```bash
+    curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"user_id":"auth-user"}'
+    ```
+    > **Risultato Atteso:** `HTTP/1.1 200 OK`
+
+2. **Proviamo a contattare `metrics`**
+    ```bash
+    curl -i http://metrics.$IP.nip.io:$PORT/metrics/logins \
+      -H "Authorization: Bearer $TOKEN"
+    ```
+    > **Risultato Atteso:** `HTTP/1.1 200 OK`
+   
+  
+### 3\. Inviare Eventi al Producer
+Ora che abbiamo verificato l'accesso, popoliamo il sistema con diversi tipi di eventi per testare il flusso completo (Producer -\> Kafka -\> Consumer -\> MongoDB).
+
 Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instrada al servizio `producer`.
 
-Per vedere se il consumer riceve effettivamente i dati mandati fare:
-```bash
-kubectl logs -l app=consumer -n kafka -f
-```
+**Stampare i log** per vedere se il consumer riceve effettivamente i dati mandati
+  ```bash
+  kubectl logs -l app=consumer -n kafka -f
+  ```
 
-#### Login Utenti:
-
-
+#### Login Utenti
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
   -H "Authorization: Bearer $TOKEN" \
@@ -542,7 +472,7 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
   -d '{"user_id": "charlie"}'
 ```
 
-#### Risultati Quiz:
+#### Risultati Quiz
 
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/quiz \
@@ -561,7 +491,7 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/quiz \
   -d '{"user_id": "charlie", "quiz_id": "phys101", "score": 28, "course_id": "physics"}'
 ```
 
-#### Download Materiali:
+#### Download Materiali
 
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/download \
@@ -580,7 +510,7 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/download \
   -d '{"user_id": "charlie", "materiale_id": "pdf2", "course_id": "physics"}'
 ```
 
-#### Prenotazione Esami:
+#### Prenotazione Esami
 
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/exam \
@@ -593,8 +523,9 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/exam \
   -H "Content-Type: application/json" \
   -d '{"user_id": "bob", "esame_id": "phys1", "course_id": "physics"}'
 ```
+### 4\. Leggere le Metriche (Metrics-service)
+Infine, interroghiamo il servizio di metriche per vedere l'aggregazione dei dati salvati su MongoDB.
 
-### Leggere le Metriche (Metrics-service)
 Queste richieste `curl` colpiscono l'host `metrics.$IP.nip.io`, che Kong instrada al servizio `metrics-service`.
 
 ```bash
@@ -817,10 +748,7 @@ kubectl logs -n kafka -l app=consumer --tail=50 --prefix=true | grep "load-test"
 
 > **Nota sull'HA:** Anche se questo test verifica le performance, dimostra indirettamente l'High Availability. Se un Producer fallisse, il traffico verrebbe natturalmente rediretto sull'altro, ugual situazione per il consumer
 
-**4. TODO Restore Replicas (Elasticità & Scale Down???) - forse va meglio con HPA**
-Dopo aver testato i picchi di carico, è fondamentale dimostrare l'**elasticità** inversa del sistema: la capacità di rilasciare risorse quando non sono più necessarie (*scale down*), riportando il cluster allo stato operativo standard.
-
-**Riduci i Pod allo stato base**
+**4. Restore Replicas**
 Riportiamo sia il Producer che il Consumer a una singola replica.
 
 ```bash
@@ -829,7 +757,6 @@ kubectl scale deployment consumer -n kafka --replicas=1
 ```
 
 > **Expectation:** Kubernetes terminerà i pod in eccesso (stato `Terminating`), liberando CPU e RAM sul cluster, mentre il servizio rimane attivo con le repliche superstiti.
-
 
 -----
 ### 4\. **Horizontal Pod Autoscaler (HPA)**
@@ -865,7 +792,11 @@ kubectl scale deployment consumer -n kafka --replicas=1
 
     > **Expectation:** Il numero di repliche (`REPLICAS`) aumenta automaticamente (es. da 1 a 4) al salire della CPU target.
 
-4.  **Restore:**
+4. **Elasticità & Scale Down**
+Dopo aver testato i picchi di carico, è fondamentale dimostrare l'**elasticità** inversa del sistema: la capacità di rilasciare risorse quando non sono più necessarie (*scale down*), riportando il cluster allo stato operativo standard; gestito automaticamente da HPA.
+   
+5.  **Restore:**
+Rimozione della configurazione HPA dal cluster
     ```bash
     kubectl delete -f K8s/hpa.yaml
     ```
