@@ -14,24 +14,20 @@ L'architettura include:
 - [Progetto Kubernetes per il corso CCT](#progetto-kubernetes-per-il-corso-cct)
   - [Indice](#indice)
   - [Prerequisiti](#prerequisiti)
-    - [Necessari](#necessari)
-    - [Opzionali](#opzionali)
   - [Architettura e Funzionamento](#architettura-e-funzionamento)
     - [1. Flusso di Ingestione (Scrittura)](#1-flusso-di-ingestione-scrittura)
     - [2. Flusso di Analisi (Lettura)](#2-flusso-di-analisi-lettura)
   - [Guida all'Installazione](#guida-allinstallazione)
-    - [Setup Iniziale del Cluster](#setup-iniziale-del-cluster)
+    - [0. Setup Iniziale del Cluster](#0-setup-iniziale-del-cluster)
     - [1. Creazione Namespace](#1-creazione-namespace)
     - [2. Strimzi Kafka Operator](#2-strimzi-kafka-operator)
-      - [2.1. Deploy del Cluster Kafka:](#21-deploy-del-cluster-kafka)
-      - [2.2. Crea Secret per Kafka SSL (per le App):](#22-crea-secret-per-kafka-ssl-per-le-app)
     - [3. MongoDB](#3-mongodb)
       - [3.1. Configurazione Utente Applicativo](#31-configurazione-utente-applicativo)
     - [4. Kong API Gateway](#4-kong-api-gateway)
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
-    - [6. Deploy Restante](#6-deploy-restante)
-    - [7. Creazione Secret per Producer Consumer e Metrics-service](#7-creazione-secret-per-producer-consumer-e-metrics-service)
+    - [6. Creazione Secret per Producer Consumer e Metrics-service](#6-creazione-secret-per-producer-consumer-e-metrics-service)
+    - [7. TODO - Deploy Restante](#7-todo---deploy-restante)
   - [Autenticazione JWT (Kong Ingress Controller)](#autenticazione-jwt-kong-ingress-controller)
     - [Obiettivi e Requisiti](#obiettivi-e-requisiti)
     - [1. Configurazione Plugin (Server-Side)](#1-configurazione-plugin-server-side)
@@ -66,14 +62,14 @@ L'architettura include:
 
 ## Prerequisiti
 
-### Necessari
-* **Docker Engine** (NON Docker Desktop). [Guida installazione Ubuntu](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository) 
-* **Minikube**
-* **kubectl**
+* **Necessari**
+  * **Docker Engine** (NON Docker Desktop). [Guida installazione Ubuntu](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository) 
+  * **Minikube**
+  * **kubectl**
 
-### Opzionali
-* **Lens**
-* **k9s**
+* **Opzionali**
+  * **Lens**
+  * **k9s**
   
 ---
 ## Architettura e Funzionamento
@@ -98,15 +94,13 @@ Il sistema implementa un pattern **Event-Driven** con API Gateway per l'autentic
 
 ## Guida all'Installazione
 
-Segui questi passaggi per configurare e avviare l'intero stack applicativo.
-
 **(Opzionale) Reset e Pulizia Ambiente:**
-```bash
-minikube delete --all
-docker system prune -a -f
-```
+    ```bash
+    minikube delete --all
+    docker system prune -a -f
+    ```
 
-### Setup Iniziale del Cluster
+### 0. Setup Iniziale del Cluster
 
 1.  **Avviare Minikube:**
     ```bash
@@ -124,65 +118,61 @@ docker system prune -a -f
     ```
     **ATTENZIONE:** Questo comando va eseguito in *ogni terminale* che userai per buildare le immagini Docker.
 
-
-
 ### 1. Creazione Namespace
+
+<div style="margin-left: 40px;">
 
 Creiamo i namespace per isolare i componenti:
 ```bash
 kubectl create namespace kong
-
 kubectl create namespace metrics
-
 kubectl create namespace kafka
 ```
+</div>
 
 ### 2\. Strimzi Kafka Operator
 
-Installiamo Strimzi per gestire il cluster Kafka.
+1. **Installiamo Strimzi** per gestire il cluster Kafka tramite Helm.
+    ```bash
+    helm repo add strimzi https://strimzi.io/charts/
+    helm repo update
+    helm install strimzi-cluster-operator strimzi/strimzi-kafka-operator -n kafka
+    ```
 
-```bash
-helm repo add strimzi https://strimzi.io/charts/
-helm repo update
-helm install strimzi-cluster-operator strimzi/strimzi-kafka-operator -n kafka
-```
+2. **Deploy del Cluster Kafka** Per prima cosa, applichiamo i manifest che definiscono il Cluster, gli Utenti e i Topic di Kafka. Questo avvierà l'operator Strimzi, che creerà il cluster e genererà il secret `uni-it-cluster-cluster-ca-cert` contenente i certificati CA.
+    ```bash
+    kubectl apply -f ./K8s/kafka-cluster.yaml
+    kubectl apply -f ./K8s/kafka-users.yaml
+    kubectl apply -f ./K8s/kafka-topic.yaml
+    ```
 
-#### 2.1\. Deploy del Cluster Kafka:
+    >**Attendi un minuto** affinché l'operator crei il cluster. Puoi verificare che il secret `uni-it-cluster-cluster-ca-cert` sia stato creato con successo eseguendo e ottenendo dei secret:
+    ```bash
+    kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka
+    ```
 
-Per prima cosa, applichiamo i manifest che definiscono il Cluster, gli Utenti e i Topic di Kafka. Questo avvierà l'operator Strimzi, che creerà il cluster e genererà il secret `uni-it-cluster-cluster-ca-cert` contenente i certificati CA.
+    *Kafka è configurato (tramite i file YAML in `K8s/`) per usare TLS e autenticazione SCRAM-SHA-512.*
 
-```bash
-kubectl apply -f ./K8s/kafka-cluster.yaml
-kubectl apply -f ./K8s/kafka-users.yaml
-kubectl apply -f ./K8s/kafka-topic.yaml
-```
-**Attendi un minuto** affinché l'operator crei il cluster. Puoi verificare che il secret `uni-it-cluster-cluster-ca-cert` sia stato creato con successo eseguendo e ottenendo dei secret:
+3. **Crea Secret per Kafka SSL:** Ora, creiamo il secret `kafka-ca-cert`. Questo comando legge il certificato CA dal secret generato da Strimzi (`uni-it-cluster-cluster-ca-cert`) e lo salva in un nuovo secret che i nostri pod (Producer e Consumer) useranno per comunicare via TLS con Kafka.
 
-```bash
-kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka
-```
-
-*Kafka è configurato (tramite i file YAML in `K8s/`) per usare TLS e autenticazione SCRAM-SHA-512.*
-
-#### 2.2\. Crea Secret per Kafka SSL (per le App):
-
-Ora, creiamo il secret `kafka-ca-cert`. Questo comando legge il certificato CA dal secret generato da Strimzi (`uni-it-cluster-cluster-ca-cert`) e lo salva in un nuovo secret che i nostri pod (Producer e Consumer) useranno per comunicare via TLS con Kafka.
-
-```bash
-kubectl create secret generic kafka-ca-cert -n kafka \
-  --from-literal=ca.crt="$(kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka -o jsonpath='{.data.ca\.crt}' | base64 -d)"
-```
+    ```bash
+    kubectl create secret generic kafka-ca-cert -n kafka \
+      --from-literal=ca.crt="$(kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka -o jsonpath='{.data.ca\.crt}' | base64 -d)"
+    ```
 
 ### 3\. MongoDB
 
-Installiamo MongoDB usando Helm.
+<div style="margin-left: 40px;">
+
+**Installiamo MongoDB** usando Helm.
 
 ```bash
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install mongo-mongodb bitnami/mongodb --namespace kafka --version 18.1.1
 ```
+>*Se l'installazione fallisce per errori di connessione, riprovare*
 
-*(Se l'installazione fallisce per errori di connessione, riprovare)*
+</div>
 
 #### 3.1\. Configurazione Utente Applicativo
 
@@ -235,70 +225,69 @@ Le applicazioni useranno questa stringa di connessione: `mongodb://appuser:appus
 
 ### 4\. Kong API Gateway
 
-Installiamo Kong e configuriamolo per monitorare i namespace corretti.
+<div style="margin-left: 40px;">
+
+**Installiamo Kong** e configuriamolo per monitorare i namespace corretti.
 
 ```bash
 helm repo add kong https://charts.konghq.com
 helm repo update
 helm install kong kong/kong -n kong
 ```
+</div>
 
-Aggiorniamo Kong per fargli "vedere" gli ingress negli altri namespace
-```bash
-helm upgrade kong kong/kong -n kong \
-  --set ingressController.watchNamespaces="{kong,kafka,metrics}"
-```
+1. **Aggiorniamo Kong** per fargli "vedere" gli ingress negli altri namespace
+    ```bash
+    helm upgrade kong kong/kong -n kong \
+      --set ingressController.watchNamespaces="{kong,kafka,metrics}"
+    ```
+2. **Verifica installazione Kong:** controlla i servizi interni al cluster nel namespace 'kong':
+    ```bash
+    kubectl get svc -n kong
+    ```
+    > L'output dovrebbe essere simile a questo (la riga importante è `kong-kong-proxy`):
 
-**Verifica installazione Kong:** 
+    ```text
+    NAME                           TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)
+    kong-kong-manager              NodePort       10.109.18.217   <none>        8002:31545/TCP,8445:30670/TCP
+    kong-kong-metrics              ClusterIP      10.101.88.235   <none>        10255/TCP,10254/TCP
+    kong-kong-proxy                LoadBalancer   10.105.61.105   <pending>     80:31260/TCP,443:32030/TCP
+    kong-kong-validation-webhook   ClusterIP      10.110.97.78    <none>        443/TCP
+    ```
+3. **Ottieni l'URL pubblico** per accedere a Kong dal tuo computer
+    ```bash
+    minikube service kong-kong-proxy -n kong --url
+    ```
 
-Controlla i servizi interni al cluster nel namespace 'kong':
+    > Questo è un comando specifico di Minikube che crea un tunnel di rete dal tuo computer al servizio `kong-kong-proxy` dentro il cluster. L'output stamperà gli URL che puoi usare per inviare richieste all'API Gateway (uno per HTTP e uno per HTTPS):
 
-```bash
-kubectl get svc -n kong
-```
-
-L'output dovrebbe essere simile a questo (la riga importante è `kong-kong-proxy`):
-
-```text
-NAME                           TYPE           CLUSTER-IP      EXTERNAL-IP   PORT(S)
-kong-kong-manager              NodePort       10.109.18.217   <none>        8002:31545/TCP,8445:30670/TCP
-kong-kong-metrics              ClusterIP      10.101.88.235   <none>        10255/TCP,10254/TCP
-kong-kong-proxy                LoadBalancer   10.105.61.105   <pending>     80:31260/TCP,443:32030/TCP
-kong-kong-validation-webhook   ClusterIP      10.110.97.78    <none>        443/TCP
-```
-
-
-Ottieni l'URL pubblico per accedere a Kong dal tuo computer
-```bash
-minikube service kong-kong-proxy -n kong --url
-```
-
-
-Questo è un comando specifico di Minikube che crea un tunnel di rete dal tuo computer al servizio `kong-kong-proxy` dentro il cluster. L'output stamperà gli URL che puoi usare per inviare richieste all'API Gateway (uno per HTTP e uno per HTTPS):
-
-```text
-http://192.168.49.2:31260
-http://192.168.49.2:32030
-```
+    ```text
+    http://192.168.49.2:31260
+    http://192.168.49.2:32030
+    ```
 
 ### 5\. Microservizi (Producer, Consumer, Metrics)
 
 Dobbiamo buildare le immagini Docker dei nostri microservizi Python.
-**Assicurati di aver eseguito `eval $(minikube docker-env)` in questo terminale\!**
 
-```bash
-docker build -t producer:latest ./Producer
-docker build -t consumer:latest ./Consumer
-docker build -t metrics-service:latest ./Metrics-service
-```
+1. **Esegui `eval $(minikube docker-env)` in questo terminale**
+   
+2. **Builda le immagini**
 
-Per controllare che le immagini siano state create nell'ambiente Minikube:
+    ```bash
+    docker build -t producer:latest ./Producer
+    docker build -t consumer:latest ./Consumer
+    docker build -t metrics-service:latest ./Metrics-service
+    ```
 
-```bash
-docker images
-```
+    Per controllare che le immagini siano state create nell'ambiente Minikube:
+    ```bash
+    docker images
+    ```
 
 #### 5.1\. Aggiornamento Microservizi
+
+<div style="margin-left: 40px;">
 
 Se modifichi il codice (es. `app.py`), devi ricreare l'immagine e riavviare il deployment:
 
@@ -316,15 +305,12 @@ Per riavviare tutti i deployment in un namespace:
 kubectl rollout restart deployment -n kafka
 kubectl rollout restart deployment -n metrics
 ```
+</div>
 
-### 6\. Deploy Restante
+### 6\. Creazione Secret per Producer Consumer e Metrics-service
 
-Infine possiamo deployare i manifest restanti
-```bash
-kubectl apply -f ./K8s
-```
+<div style="margin-left: 40px;">
 
-### 7\. Creazione Secret per Producer Consumer e Metrics-service
 Utilizziamo secert kubernetes invece delle password per permettere a Producer, Consumer e Metrics-service di connettersi a MongoDB.
 Il `MONGO_URI ` è stato ottenuto alla fine del configurazione di MongoDB ([3.1 Configurazione Utente Applicativo](#31-configurazione-utente-applicativo)).
 
@@ -336,6 +322,16 @@ kubectl create secret generic mongo-creds -n kafka --from-literal=MONGO_URI="$MO
 
 kubectl create secret generic mongo-creds -n metrics --from-literal=MONGO_URI="$MONGO_URI"
 ```
+</div>
+
+### 7\. TODO - Deploy Restante
+
+Infine possiamo deployare i manifest restanti
+```bash
+kubectl apply -f ./K8s
+```
+
+
 
 ## Autenticazione JWT (Kong Ingress Controller)
 In questo progetto abbiamo configurato Kong come API Gateway all’interno di Kubernetes per centralizzare l'autenticazione dei microservizi. L'approccio scelto è puramente dichiarativo: la sicurezza viene gestita tramite oggetti Kubernetes (Ingress, KongPlugin, KongConsumer e Secret) senza interagire direttamente con la Kong Admin API.
