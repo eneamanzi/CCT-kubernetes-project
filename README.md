@@ -11,12 +11,12 @@ L'architettura include:
 * **Metrics-service**: Microservizio che espone metriche calcolate leggendo da MongoDB.
 
 ## Indice
-
 - [Progetto Kubernetes per il corso CCT](#progetto-kubernetes-per-il-corso-cct)
   - [Indice](#indice)
   - [Prerequisiti](#prerequisiti)
     - [Necessari](#necessari)
     - [Opzionali](#opzionali)
+  - [Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT](#architettura-e-funzionamento-flusso-dei-dati---todo-adattare-ad-autenticazione-jwt)
   - [Guida all'Installazione](#guida-allinstallazione)
     - [Setup Iniziale del Cluster](#setup-iniziale-del-cluster)
     - [1. Creazione Namespace](#1-creazione-namespace)
@@ -49,7 +49,6 @@ L'architettura include:
       - [Download Materiali:](#download-materiali)
       - [Prenotazione Esami:](#prenotazione-esami)
     - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
-  - [Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT](#architettura-e-funzionamento-flusso-dei-dati---todo-adattare-ad-autenticazione-jwt)
   - [Non-Functional Property (NFP)](#non-functional-property-nfp)
     - [Prerequisites](#prerequisites)
     - [1. **Security \& Secrets Management**](#1-security--secrets-management)
@@ -73,6 +72,37 @@ L'architettura include:
 ### Opzionali
 * **Lens**
 * **k9s**
+  
+---
+
+## Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT
+
+Una volta completato il deploy, il sistema gestisce due flussi principali tramite l'API Gateway Kong:
+
+  * **Richieste POST (`/event`)**
+
+    1.  Le richieste (es. `POST /event/some-data`) vengono inviate a Kong.
+    2.  Kong le inoltra al microservizio **Producer**.
+    3.  Il Producer valida i dati e li pubblica sulla coda Kafka (`student-events`).
+    4.  Il **Consumer** (in ascolto sulla coda) riceve il messaggio.
+    5.  Il Consumer salva i dati nel database MongoDB.
+
+  * **Richieste GET (`/metrics`)**
+
+    1.  Le richieste `GET /metrics` arrivano a Kong.
+    2.  Kong le inoltra al **Metrics-service**.
+    3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
+    4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
+
+
+Il flusso logico delle richieste è il seguente:
+| Step | Componente | Azione |
+| :--- | :--- | :--- |
+| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
+| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
+| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
+| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
+| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
 
 ---
 
@@ -592,36 +622,6 @@ curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metric
 
 curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metrics/exams
 ```
-
-## Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT
-
-Una volta completato il deploy, il sistema gestisce due flussi principali tramite l'API Gateway Kong:
-
-  * **Richieste POST (`/event`)**
-
-    1.  Le richieste (es. `POST /event/some-data`) vengono inviate a Kong.
-    2.  Kong le inoltra al microservizio **Producer**.
-    3.  Il Producer valida i dati e li pubblica sulla coda Kafka (`student-events`).
-    4.  Il **Consumer** (in ascolto sulla coda) riceve il messaggio.
-    5.  Il Consumer salva i dati nel database MongoDB.
-
-  * **Richieste GET (`/metrics`)**
-
-    1.  Le richieste `GET /metrics` arrivano a Kong.
-    2.  Kong le inoltra al **Metrics-service**.
-    3.  Il Metrics-service interroga MongoDB, calcola le metriche aggregate.
-    4.  Il servizio risponde al client (tramite Kong) con le metriche calcolate.
-
-
-Il flusso logico delle richieste è il seguente:
-| Step | Componente | Azione |
-| :--- | :--- | :--- |
-| 1️⃣ | Client HTTP | Chiama `POST /event/...` su Kong |
-| 2️⃣ | Producer | Riceve la richiesta da Kong e invia l'evento al topic Kafka `student-events` |
-| 3️⃣ | Consumer | Riceve l'evento da Kafka e lo salva in MongoDB |
-| 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
-| 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
-
 
 ## Non-Functional Property (NFP)
 
