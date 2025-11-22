@@ -36,11 +36,12 @@ L'architettura include:
     - [1. Setup Variabili Ambiente (IP, PORT, TOKEN)](#1-setup-variabili-ambiente-ip-port-token)
     - [2. Verifica Autenticazione (Security Check)](#2-verifica-autenticazione-security-check)
     - [3. Inviare Eventi al Producer](#3-inviare-eventi-al-producer)
-      - [Login Utenti](#login-utenti)
-      - [Risultati Quiz](#risultati-quiz)
-      - [Download Materiali](#download-materiali)
-      - [Prenotazione Esami](#prenotazione-esami)
+      - [3.1 Login Utenti](#31-login-utenti)
+      - [3.2 Risultati Quiz](#32-risultati-quiz)
+      - [3.3 Download Materiali](#33-download-materiali)
+      - [3.4 Prenotazione Esami](#34-prenotazione-esami)
     - [4. Leggere le Metriche (Metrics-service)](#4-leggere-le-metriche-metrics-service)
+    - [5. Database Clean-up (utility)](#5-database-clean-up-utility)
   - [Non-Functional Property (NFP)](#non-functional-property-nfp)
     - [Prerequisites](#prerequisites)
     - [1. **Security \& Secrets Management**](#1-security--secrets-management)
@@ -49,9 +50,8 @@ L'architettura include:
       - [2.2. High Availability: Self-Healing del Producer](#22-high-availability-self-healing-del-producer)
     - [3. **Scalabilità \& Load Balancing (senza HPA)**](#3-scalabilità--load-balancing-senza-hpa)
     - [4. **Horizontal Pod Autoscaler (HPA)**](#4-horizontal-pod-autoscaler-hpa)
-    - [4. **Kong Rate Limiting Policy (Optional)**](#4-kong-rate-limiting-policy-optional)
-    - [6. Database Clean-up (opzionale)](#6-database-clean-up-opzionale)
-    - [5. Verification \& Success Criteria](#5-verification--success-criteria)
+    - [5. **Kong Rate Limiting Policy (Optional)**](#5-kong-rate-limiting-policy-optional)
+    - [6. Verification \& Success Criteria](#6-verification--success-criteria)
 
 
 ## Prerequisiti
@@ -193,7 +193,7 @@ helm install mongo-mongodb bitnami/mongodb --namespace kafka --version 18.1.1
 
 4.  **Nel prompt di Mongo, esegui:**
     
-    1.  Passa al database `student_event`
+    1.  Passa al database `student_events`
         ```mongo
         use student_events;
         ```
@@ -320,50 +320,47 @@ kubectl create secret generic mongo-creds -n metrics --from-literal=MONGO_URI="$
 
 
 ### 7\. Autenticazione JWT
+<div style="margin-left: 40px;">
+
 L'obiettivo è proteggere gli endpoint esposti (`producer` e `metrics`) bloccando qualsiasi richiesta non autenticata (`401 Unauthorized`) e permettendo l'accesso (`200 OK`) solo se presente un token valido firmato con algoritmo HS256.
-
-Vogliamo proteggere i seguenti host:
-
-  * **Producer:** `producer.192.168.49.2.nip.io`
-  * **Metrics:** `metrics.192.168.49.2.nip.io/metrics`
 
 **Componenti utilizzati:**
 
   * 2x `KongPlugin` (uno per namespace: `kafka` e `metrics`)
   * 1x `KongConsumer` (identità logica del client)
   * 1x `Secret` Kubernetes (credenziali JWT dichiarative, senza uso di Admin API)
-
+</div>
 
 #### 7.1\. Configurazione JWT: Kong Consumer & Credentials
+<div style="margin-left: 40px;">
 
 Prima di esporre i servizi, configuriamo l'autenticazione. Creiamo l'identità del "consumatore" (è SOLO un oggetto per Kong, NON un utente reale. Serve per collegare una credential JWT ad un “nome”) e le credenziali JWT necessarie per validare i token.
 
 > **Nota:** Questo passaggio crea un `KongConsumer` e un `Secret` Kubernetes contenente la chiave condivisa (HS256) per la firma dei token.
 
 ```bash
-# Crea il Secret con la chiave condivisa
-kubectl apply -f ./K8s/jwt-credential.yaml
-
-# Crea l'identità del consumatore "exam-client"
 kubectl apply -f ./K8s/jwt-consumer.yaml
+
+kubectl apply -f ./K8s/jwt-credential.yaml
 ```
+</div>
 
 #### 7.2\. Attivazione Plugin di Sicurezza
+<div style="margin-left: 40px;">
+
 Kong applica la sicurezza tramite plugin associati ai namespace o agli Ingress. Poiché abbiamo Ingress in namespace diversi, attiviamo il plugin `jwt` specificamente per ciascuno di essi.
 
 ```bash
-# Attiva il plugin JWT per il namespace 'kafka' (protegge il Producer)
 kubectl apply -f ./K8s/jwt-plugin-kafka.yaml
 
-# Attiva il plugin JWT per il namespace 'metrics' (protegge il Metrics-service)
 kubectl apply -f ./K8s/jwt-plugin-metrics.yaml
 ```
+</div>
 
 #### 7.3\. Generazione Token di Accesso (Client-Side)
+<div style="margin-left: 40px;">
 
-Il sistema è ora attivo e protetto ("Secure by Default"). Qualsiasi richiesta effettuata senza un token valido riceverà un errore `401 Unauthorized`.
-
-Per interagire con le API, è necessario generare un token JWT firmato con la stessa chiave segreta caricata al punto [7.1. Configurazione JWT: Kong Consumer & Credentials](#71-configurazione-jwt-kong-consumer--credentials)
+Qualsiasi richiesta effettuata senza un token valido riceverà un errore `401 Unauthorized`: per interagire con le API, è necessario generare un token JWT firmato con la stessa chiave segreta caricata al punto [7.1. Configurazione JWT: Kong Consumer & Credentials](#71-configurazione-jwt-kong-consumer--credentials)
 
 **Genera il token:** Utilizza lo script Python incluso nella root del progetto (richiede la libreria `pyjwt`) per generare un token e salvarlo in una varaibile d'ambiente:
 
@@ -372,9 +369,10 @@ export TOKEN=$(python3 gen_jwt.py)
 echo "Token generato: $TOKEN"
 ```
 > **Nota di Sicurezza:** Lo script `gen-jwt.py` contiene il segreto condiviso hardcodato per semplicità dimostrativa. In un ambiente di produzione, questa chiave dovrebbe essere iniettata tramite variabili d'ambiente sicure o sistemi di gestione dei segreti (es. Vault).
-
+</div>
 
 ### 8\. Deploy Restante dei Microservizi
+<div style="margin-left: 40px;">
 
 Ora che l'infrastruttura di base e la sicurezza sono configurate, possiamo deployare i restanti manifest (Deployment, Service, Ingress).
 Gli Ingress (`producer-ingress` e `metrics-ingress`) sono già configurati con l'annotazione `konghq.com/plugins: jwt-auth`, quindi saranno protetti immediatamente al momento della creazione.
@@ -385,9 +383,9 @@ kubectl apply -f ./K8s
 
 *(Questo comando applicherà tutti i file YAML nella cartella K8s, aggiornando quelli già esistenti e creando quelli nuovi).*
 
+>**Attenzione:** I file Ingress in K8s/ sono configurati per l'IP 192.168.49.2. Se minikube ip restituisce un valore diverso, modifica `producer-ingress` e `metrics-ingress` con il tuo IP corretto.
+</div>
 
-
-----------------------
 ## Comandi di Test: verifica del funzionamento + utility
 Utilizzeremo `curl` e il servizio `nip.io` per risolvere i sottodomini (`producer` e `metrics`) direttamente all'IP del cluster Minikube, permettendoci di testare gli Ingress basati su host.
 
@@ -454,7 +452,7 @@ Queste richieste `curl` colpiscono l'host `producer.$IP.nip.io`, che Kong instra
   kubectl logs -l app=consumer -n kafka -f
   ```
 
-#### Login Utenti
+#### 3.1 Login Utenti
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
   -H "Authorization: Bearer $TOKEN" \
@@ -472,7 +470,7 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/login \
   -d '{"user_id": "charlie"}'
 ```
 
-#### Risultati Quiz
+#### 3.2 Risultati Quiz
 
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/quiz \
@@ -491,7 +489,7 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/quiz \
   -d '{"user_id": "charlie", "quiz_id": "phys101", "score": 28, "course_id": "physics"}'
 ```
 
-#### Download Materiali
+#### 3.3 Download Materiali
 
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/download \
@@ -510,7 +508,7 @@ curl -i -X POST http://producer.$IP.nip.io:$PORT/event/download \
   -d '{"user_id": "charlie", "materiale_id": "pdf2", "course_id": "physics"}'
 ```
 
-#### Prenotazione Esami
+#### 3.4 Prenotazione Esami
 
 ```bash
 curl -i -X POST http://producer.$IP.nip.io:$PORT/event/exam \
@@ -539,10 +537,33 @@ curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metric
 
 curl -i -H "Authorization: Bearer $TOKEN" http://metrics.$IP.nip.io:$PORT/metrics/exams
 ```
+### 5\. Database Clean-up (utility)
+  
+Recupero password admin dal secret di mongo
+```bash
+export MONGODB_ROOT_PASSWORD=$(kubectl get secret --namespace kafka mongo-mongodb -o jsonpath="{.data.mongodb-root-password}" | base64 -d)
+```
+
+Trova tutte le collezioni presenti in student_events e cancella il loro contenuto una per una.
+```bash
+kubectl exec -it deployment/mongo-mongodb -n kafka -- mongosh student_events \
+-u root -p $MONGODB_ROOT_PASSWORD \
+--authenticationDatabase admin \
+--eval "db.getCollectionNames().forEach(function(c){ db[c].deleteMany({}); print('Svuotata: ' + c); })"
+```
+
+Cicla su tutte le collezioni e usa printjson per mostrare i dati formattati.
+```bash
+kubectl exec -it deployment/mongo-mongodb -n kafka -- mongosh student_events \
+-u root -p $MONGODB_ROOT_PASSWORD \
+--authenticationDatabase admin \
+--eval "db.getCollectionNames().forEach(function(c){ print('\n--- Collezione: ' + c + ' ---'); printjson(db[c].find().toArray()); })"
+```
 
 ## Non-Functional Property (NFP)
 
-Questa sezione documenta la validazione delle proprietà non funzionali (NFR) dell'infrastruttura. L'obiettivo è certificare la **resilienza**, la **sicurezza**, la **scalabilità** e le **performance** dell'architettura a microservizi su Kubernetes, con focus specifico su Kafka, Kong Gateway e gestione dei Secrets.
+Questa sezione documenta la validazione delle proprietà non funzionali (NFP) dell'infrastruttura. \
+L'obiettivo è certificare la `sicurezza`, la `resilienza, fault tolerance e HA`,  la `scalabilità e load balancing` tra cui l'`autoscaling basato su metriche` dell'architettura a microservizi su realizzata.
 
 ### Prerequisites 
 Estrazione dinamica di IP e Porta del Gateway (Minikube)
@@ -551,7 +572,10 @@ Estrazione dinamica di IP e Porta del Gateway (Minikube)
 export IP=$(minikube ip)
 export PORT=$(minikube service kong-kong-proxy -n kong --url | head -n 1 | awk -F: '{print $3}')
 
-echo "Target Environment: http://$IP:$PORT"
+export TOKEN=$(python3 gen_jwt.py)
+
+echo "Target (IP:PORT): $IP:$PORT"
+echo "Token:  $TOKEN"
 ```
 
 ### 1\. **Security & Secrets Management**
@@ -593,14 +617,12 @@ echo "Target Environment: http://$IP:$PORT"
     kubectl get secret -n kafka mongo-creds -o yaml | head -n 20
     kubectl get secret -n metrics mongo-creds -o yaml | head -n 20
     ```
-    
------
 
 ### 2\. **Resilience, Fault Tolerance & High Availability**
 
-**Obiettivo:** Dimostrare che il sistema non perde dati in caso di crash dei componenti (Consumer o Broker).
-
 #### 2.1\. Fault Tolerance: Consumer Failure (Buffering)
+
+**Obiettivo:** Dimostrare che il sistema non perde dati in caso di crash dei componenti
 
 Questo scenario simula il crash improvviso del Consumer mentre i dati continuano ad arrivare al Producer. Dimostra la capacità di Kafka di fungere da buffer persistente.
 
@@ -641,6 +663,9 @@ Questo scenario simula il crash improvviso del Consumer mentre i dati continuano
 
 
 #### 2.2\. High Availability: Self-Healing del Producer
+
+**Obiettivo:** Dimostrare che il sistema ripristina autonomamente i pod interrorti garantendo High Availability (se replicas>=2), sopravvivendo quindi alla perdita di un nodo applicativo.
+
 Questo test verifica la resilienza dell'infrastruttura simulando un crash improvviso (o un'eliminazione accidentale) di un Pod. L'obiettivo è dimostrare che Kubernetes rileva la discrepanza tra lo stato desiderato e quello attuale, avviando immediatamente una nuova istanza per ripristinare il servizio.
 
 1. **Verifica stato iniziale**
@@ -692,74 +717,75 @@ Questo test verifica la resilienza dell'infrastruttura simulando un crash improv
 
 ### 3\. **Scalabilità & Load Balancing (senza HPA)**
 
-**Obiettivo:** Verificare che il traffico sia distribuito tra le repliche e che il sistema sopravviva alla perdita di un nodo applicativo.
+**Obiettivo:** Verificare che il traffico sia distribuito tra le repliche di producer e consumer
 
 > **ATTENZIONE:** Assicurati che l'Horizontal Pod Autoscaler (HPA) **NON** sia attivo prima di eseguire questo test. Se hai già applicato `hpa.yaml`, eliminalo con `kubectl delete -f K8s/hpa.yaml` per evitare che Kubernetes interferisca con il ridimensionamento manuale.
 
-Questo test simula uno scenario di alto carico per verificare due comportamenti critici simultaneamente:
-
-1.  **Ingress Load Balancing:** La distribuzione del traffico HTTP tra le repliche del Producer.
-2.  **Consumer Parallelism:** La capacità di parallelizzare la lettura dei messaggi Kafka sfruttando il partizionamento.
-
-**1. Preparazione: Scaling dei Servizi**
-Scaliamo il **Producer** a 2 repliche (per testare il Round-Robin HTTP) e il **Consumer** a 3 repliche (per allinearsi alle 3 partizioni del topic Kafka e garantire il massimo parallelismo).
-
-```bash
-# Scala il Producer (HTTP Layer)
-kubectl scale deploy/producer -n kafka --replicas=2
-
-# Scala il Consumer (Kafka Layer)
-kubectl scale deploy/consumer -n kafka --replicas=3
-
-# Attendi che i pod siano pronti
-kubectl get pods -n kafka -l "app in (producer, consumer)"
-```
-
-**2. Iniezione del Carico (Burst)**
-Eseguiamo un ciclo di 50 chiamate API rapide. L'alta frequenza costringerà il Service a distribuire il carico sui Producer, i quali invieranno messaggi a Kafka per essere consumati in parallelo.
-
-```bash
-for i in {1..50}; do
-  curl -s -X POST http://producer.$IP.nip.io:$PORT/event/login \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{\"user_id\":\"load-test-$i\"}" >/dev/null
-done
-```
-
-**3. Validazione1: Producer & Ingress**
-Verifica che le richieste siano state distribuite tra i due pod del Producer.
-
-```bash
-kubectl logs -n kafka -l app=producer --tail=50 --prefix=true | grep "load-test"
-```
-
-> **Expectation:** Osservando i log, dovresti vedere che le richieste `lb-test-*` sono state gestite alternativamente dai due pod diversi (es. *vv8cg/producer* e *bpn87/producer*), confermando che il carico è stato bilanciato dal Kong Ingress e dal producer-service.
-
-**4. Validazione2: Consumer & Partizioni**
-Verifica che i messaggi siano stati processati da tutte e tre le repliche del Consumer.
-
-```bash
-kubectl logs -n kafka -l app=consumer --tail=50 --prefix=true | grep "load-test"
-```
-
-> **Expectation:** I log devono provenire da **tutti e 3 i pod** del Consumer. Questo conferma che ogni replica sta leggendo dalla sua partizione assegnata, massimizzando il throughput.
+Questo test simula uno scenario di alto carico per verificare due comportamenti critici simultaneamente: \
+  **Ingress Load Balancing:** La distribuzione del traffico HTTP tra le repliche del Producer. \
+  **Consumer Parallelism:** La capacità di parallelizzare la lettura dei messaggi Kafka sfruttando il partizionamento.
 
 
-> **Nota sull'HA:** Anche se questo test verifica le performance, dimostra indirettamente l'High Availability. Se un Producer fallisse, il traffico verrebbe natturalmente rediretto sull'altro, ugual situazione per il consumer
+1. **Preparazione: Scaling dei Servizi**
+    Scaliamo il **Producer** a 2 repliche (per testare il Round-Robin HTTP) e il **Consumer** a 3 repliche (per allinearsi alle 3 partizioni del topic Kafka e garantire il massimo parallelismo).
 
-**4. Restore Replicas**
-Riportiamo sia il Producer che il Consumer a una singola replica.
+    ```bash
+    # Scala il Producer (HTTP Layer)
+    kubectl scale deploy/producer -n kafka --replicas=2
 
-```bash
-kubectl scale deployment producer -n kafka --replicas=1
-kubectl scale deployment consumer -n kafka --replicas=1
-```
+    # Scala il Consumer (Kafka Layer)
+    kubectl scale deploy/consumer -n kafka --replicas=3
 
-> **Expectation:** Kubernetes terminerà i pod in eccesso (stato `Terminating`), liberando CPU e RAM sul cluster, mentre il servizio rimane attivo con le repliche superstiti.
+    # Attendi che i pod siano pronti
+    kubectl get pods -n kafka -l "app in (producer, consumer)"
+    ```
 
------
+2. **Iniezione del Carico (Burst)**
+    Eseguiamo un ciclo di 50 chiamate API rapide. L'alta frequenza costringerà il Service a distribuire il carico sui Producer, i quali invieranno messaggi a Kafka per essere consumati in parallelo.
+
+    ```bash
+    for i in {1..50}; do
+      curl -s -X POST http://producer.$IP.nip.io:$PORT/event/login \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"user_id\":\"load-test-$i\"}" >/dev/null
+    done
+    ```
+
+3. **Validazione1: Producer & Ingress**
+    Verifica che le richieste siano state distribuite tra i due pod del Producer.
+
+    ```bash
+    kubectl logs -n kafka -l app=producer --tail=50 --prefix=true | grep "load-test"
+    ```
+
+    > **Expectation:** Osservando i log, dovresti vedere che le richieste `lb-test-*` sono state gestite alternativamente dai due pod diversi (es. *vv8cg/producer* e *bpn87/producer*), confermando che il carico è stato bilanciato dal Kong Ingress e dal producer-service.
+
+4. **Validazione2: Consumer & Partizioni**
+    Verifica che i messaggi siano stati processati da tutte e tre le repliche del Consumer.
+
+    ```bash
+    kubectl logs -n kafka -l app=consumer --tail=50 --prefix=true | grep "load-test"
+    ```
+
+    > **Expectation:** I log devono provenire da **tutti e 3 i pod** del Consumer. Questo conferma che ogni replica sta leggendo dalla sua partizione assegnata, massimizzando il throughput.
+
+
+    > **Nota sull'HA:** Anche se questo test verifica le performance, dimostra indirettamente l'High Availability. Se un Producer fallisse, il traffico verrebbe natturalmente rediretto sull'altro, ugual situazione per il consumer
+
+5. **Restore Replicas**
+    Riportiamo sia il Producer che il Consumer a una singola replica.
+
+    ```bash
+    kubectl scale deployment producer -n kafka --replicas=1
+    kubectl scale deployment consumer -n kafka --replicas=1
+    ```
+
+    > **Expectation:** Kubernetes terminerà i pod in eccesso (stato `Terminating`), liberando CPU e RAM sul cluster, mentre il servizio rimane attivo con le repliche superstiti.
+
 ### 4\. **Horizontal Pod Autoscaler (HPA)**
+
+**Obiettivo:** Verificare che le repliche dei pod consumer e poducer aumentano/diminusicono inbase al carico di lavoro, gestito autonomamente da HPA
 
 1.  **Setup Iniziale:** Deploy della configurazione per HPA
     ```bash
@@ -801,8 +827,7 @@ Rimozione della configurazione HPA dal cluster
     kubectl delete -f K8s/hpa.yaml
     ```
 
------
-### 4\. **Kong Rate Limiting Policy (Optional)**
+### 5\. **Kong Rate Limiting Policy (Optional)**
 
 **Obiettivo:** Verificare la protezione dell'API Gateway contro attacchi flood.
 
@@ -852,32 +877,8 @@ Definiamo una risorsa `KongPlugin` che impone un limite di **5 richieste al seco
 
     > **Expectation:** Si ottengono solo risposte con codice `200` data l'assenza del rate-limiting.
 
-### 6\. Database Clean-up (opzionale)
-  
-Recupero password admin dal secret di mongo
-```bash
-export MONGODB_ROOT_PASSWORD=$(kubectl get secret --namespace kafka mongo-mongodb -o jsonpath="{.data.mongodb-root-password}" | base64 -d)
-```
 
-Trova tutte le collezioni presenti in student_events e cancella il loro contenuto una per una.
-```bash
-kubectl exec -it deployment/mongo-mongodb -n kafka -- mongosh student_events \
--u root -p $MONGODB_ROOT_PASSWORD \
---authenticationDatabase admin \
---eval "db.getCollectionNames().forEach(function(c){ db[c].deleteMany({}); print('Svuotata: ' + c); })"
-```
-
-Cicla su tutte le collezioni e usa printjson per mostrare i dati formattati.
-```bash
-kubectl exec -it deployment/mongo-mongodb -n kafka -- mongosh student_events \
--u root -p $MONGODB_ROOT_PASSWORD \
---authenticationDatabase admin \
---eval "db.getCollectionNames().forEach(function(c){ print('\n--- Collezione: ' + c + ' ---'); printjson(db[c].find().toArray()); })"
-```
-
------
-
-### 5\. Verification & Success Criteria
+### 6\. Verification & Success Criteria
 
 Per considerare i test superati, monitorare le seguenti metriche su Grafana o via CLI:
 
@@ -888,11 +889,3 @@ Per considerare i test superati, monitorare le seguenti metriche su Grafana o vi
 | **Performance** | **Latency** | Risposta HTTP \< 200ms (percepita dal client). |
 | **Scalability** | **HPA Reaction** | Scale-out avviato entro 60s dal picco di CPU. |
 | **Security** | **TLS Version** | Minimo `TLSv1.2` o `TLSv1.3`. |
-
------
-
-
-
-
-
-
