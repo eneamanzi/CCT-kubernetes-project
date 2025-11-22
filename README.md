@@ -140,7 +140,11 @@ kubectl create namespace kafka
     kubectl apply -f ./K8s/kafka-topic.yaml
     ```
 
-    >**Attendi un minuto** affinché l'operator crei il cluster. Puoi verificare che il secret `uni-it-cluster-cluster-ca-cert` sia stato creato con successo eseguendo e ottenendo dei secret:
+    > **Attendi che il cluster sia pronto:** affinché l'operator crei il cluster potrebbe volerci qualche minuto
+    ```bash
+    kubectl wait kafka/uni-it-cluster --for=condition=Ready --timeout=300s -n kafka
+    ```
+    Una volta terminato il comando precedente verifica che il secret `uni-it-cluster-cluster-ca-cert` sia stato creato con successo
     ```bash
     kubectl get secret uni-it-cluster-cluster-ca-cert -n kafka
     ```
@@ -305,7 +309,7 @@ kubectl rollout restart deployment -n metrics
 
 <div style="margin-left: 40px;">
 
-Utilizziamo secert kubernetes invece delle password per permettere a Producer, Consumer e Metrics-service di connettersi a MongoDB.
+Utilizziamo Secret kubernetes invece delle password per permettere a Producer, Consumer e Metrics-service di connettersi a MongoDB.
 Il `MONGO_URI ` è stato ottenuto alla fine del configurazione di MongoDB ([3.1 Configurazione Utente Applicativo](#31-configurazione-utente-applicativo)).
 
 
@@ -362,7 +366,7 @@ kubectl apply -f ./K8s/jwt-plugin-metrics.yaml
 
 Qualsiasi richiesta effettuata senza un token valido riceverà un errore `401 Unauthorized`: per interagire con le API, è necessario generare un token JWT firmato con la stessa chiave segreta caricata al punto [7.1. Configurazione JWT: Kong Consumer & Credentials](#71-configurazione-jwt-kong-consumer--credentials)
 
-**Genera il token:** Utilizza lo script Python incluso nella root del progetto (richiede la libreria `pyjwt`) per generare un token e salvarlo in una varaibile d'ambiente:
+**Genera il token:** Utilizza lo script Python incluso nella root del progetto (richiede la libreria `pyjwt`) per generare un token e salvarlo in una variabile d'ambiente:
 
 ```bash
 export TOKEN=$(python3 gen_jwt.py)
@@ -593,7 +597,7 @@ echo "Token:  $TOKEN"
     > **Expectation:** Output contenente `Protocol version: TLSv1.3` e Cipher Suite robusta (es. `TLS_AES_256_GCM_SHA384`).
 
 2.  **Verifica SASL (Authentication):**
-    Tenta una connessione senza credenziali per confermare che venga rifiutata, fallisce resituendo `Unauthorized`.
+    Tenta una connessione senza credenziali per confermare che venga rifiutata, fallisce restituendo `Unauthorized`.
 
     ```bash
     curl -X POST http://producer.$IP.nip.io:$PORT/event/login \
@@ -612,7 +616,7 @@ echo "Token:  $TOKEN"
 
     > **Expectation:** Nessuna credenziale visibile. I valori vengoo letti attraverso `valueFrom.secretKeyRef`.
 
-    Per ottenere i secret geenrati:
+    Per ottenere i secret generati:
     ```bash
     kubectl get secret -n kafka mongo-creds -o yaml | head -n 20
     kubectl get secret -n metrics mongo-creds -o yaml | head -n 20
@@ -664,7 +668,7 @@ Questo scenario simula il crash improvviso del Consumer mentre i dati continuano
 
 #### 2.2\. High Availability: Self-Healing del Producer
 
-**Obiettivo:** Dimostrare che il sistema ripristina autonomamente i pod interrorti garantendo High Availability (se replicas>=2), sopravvivendo quindi alla perdita di un nodo applicativo.
+**Obiettivo:** Dimostrare che il sistema ripristina autonomamente i pod interrotti garantendo High Availability (se replicas>=2), sopravvivendo quindi alla perdita di un nodo applicativo.
 
 Questo test verifica la resilienza dell'infrastruttura simulando un crash improvviso (o un'eliminazione accidentale) di un Pod. L'obiettivo è dimostrare che Kubernetes rileva la discrepanza tra lo stato desiderato e quello attuale, avviando immediatamente una nuova istanza per ripristinare il servizio.
 
@@ -792,7 +796,7 @@ Questo test simula uno scenario di alto carico per verificare due comportamenti 
     kubectl apply -f K8s/hpa.yaml
     ```
 
-    Comandi per controlalre che sia effettivamente deployato e i relativi valori
+    Comandi per controllare che sia effettivamente deployato e i relativi valori
     ```bash
     kubectl get hpa -n kafka
     kubectl describe hpa producer-hpa -n kafka | head -n 15
@@ -884,8 +888,8 @@ Per considerare i test superati, monitorare le seguenti metriche su Grafana o vi
 
 | Metric Category | Key Indicator | Threshold / Success Criteria |
 | :--- | :--- | :--- |
+| **Security** | **TLS Version** | Minimo `TLSv1.2` o `TLSv1.3`. |
 | **Availability** | `kubectl get pods` | Status `Running` e Restarts \< 3 (post-test). |
 | **Reliability** | **Data Loss** | 0 Messaggi persi dopo il restart del Consumer. |
-| **Performance** | **Latency** | Risposta HTTP \< 200ms (percepita dal client). |
 | **Scalability** | **HPA Reaction** | Scale-out avviato entro 60s dal picco di CPU. |
-| **Security** | **TLS Version** | Minimo `TLSv1.2` o `TLSv1.3`. |
+
