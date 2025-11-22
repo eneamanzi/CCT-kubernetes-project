@@ -51,7 +51,7 @@ L'architettura include:
     - [3. **Scalabilità \& Load Balancing (senza HPA)**](#3-scalabilità--load-balancing-senza-hpa)
     - [4. **Horizontal Pod Autoscaler (HPA)**](#4-horizontal-pod-autoscaler-hpa)
     - [5. **Kong Rate Limiting Policy (Optional)**](#5-kong-rate-limiting-policy-optional)
-    - [6. Verification \& Success Criteria](#6-verification--success-criteria)
+    - [6. Verification \& Success Criteria (Final Checklist)](#6-verification--success-criteria-final-checklist)
 
 
 ## Prerequisiti
@@ -882,14 +882,15 @@ Definiamo una risorsa `KongPlugin` che impone un limite di **5 richieste al seco
     > **Expectation:** Si ottengono solo risposte con codice `200` data l'assenza del rate-limiting.
 
 
-### 6\. Verification & Success Criteria
 
-Per considerare i test superati, monitorare le seguenti metriche su Grafana o via CLI:
+### 6\. Verification & Success Criteria (Final Checklist)
 
-| Metric Category | Key Indicator | Threshold / Success Criteria |
-| :--- | :--- | :--- |
-| **Security** | **TLS Version** | Minimo `TLSv1.2` o `TLSv1.3`. |
-| **Availability** | `kubectl get pods` | Status `Running` e Restarts \< 3 (post-test). |
-| **Reliability** | **Data Loss** | 0 Messaggi persi dopo il restart del Consumer. |
-| **Scalability** | **HPA Reaction** | Scale-out avviato entro 60s dal picco di CPU. |
+Questa sezione riassume i criteri di accettazione per considerare il sistema **pronto per la produzione**. 
 
+| Area | Controllo (Action) | Comando di Verifica Rapida | Success Criteria (Output Atteso) |
+| :--- | :--- | :--- | :--- |
+| **Security** | **TLS Encryption** | `kubectl exec -it -n kafka uni-it-cluster-broker-0 -- openssl s_client -connect uni-it-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093 -brief </dev/null` | Protocollo: `TLSv1.3` (o v1.2) <br> Cipher Suite: Elevata (es. `TLS_AES_256...`) |
+| **Security** | **Auth Reject** | `curl -X POST http://producer.$IP.nip.io:$PORT/event/login -H "Content-Type: application/json" -d '{"user_id": "test_unauthorized_user"}'`| Status Code: `401 Unauthorized` |
+| **Availability** | **Pod Status** | `kubectl get pods -A -l "app in (producer, consumer, metrics-service)"` | Tutti i Pod in stato `Running`. |
+| **Reliability** | **No Data Loss** | `kubectl logs -n kafka -l app=consumer --tail=100 \| grep "offline-msg"` | Presenza dei log per i messaggi inviati durante il downtime (es. `offline-msg-*`). |
+| **Scalability** | **HPA Trigger** | `kubectl get hpa -n kafka` | Colonna `REPLICAS` > `MINPODS` durante il carico. <br> Colonna `TARGETS` mostra % > 50%. |
