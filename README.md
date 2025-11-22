@@ -29,7 +29,7 @@ L'architettura include:
     - [5. Microservizi (Producer, Consumer, Metrics)](#5-microservizi-producer-consumer-metrics)
       - [5.1. Aggiornamento Microservizi](#51-aggiornamento-microservizi)
     - [6. Deploy Restante](#6-deploy-restante)
-    - [7. Creazione Secret per Producer Consumer e Metrics-service -  TODO DEFINIRE COME PRENDERE IL MONGO URI](#7-creazione-secret-per-producer-consumer-e-metrics-service----todo-definire-come-prendere-il-mongo-uri)
+    - [7. Creazione Secret per Producer Consumer e Metrics-service](#7-creazione-secret-per-producer-consumer-e-metrics-service)
   - [Autenticazione JWT (Kong Ingress Controller)](#autenticazione-jwt-kong-ingress-controller)
     - [Obiettivi e Requisiti](#obiettivi-e-requisiti)
     - [1. Configurazione Plugin (Server-Side)](#1-configurazione-plugin-server-side)
@@ -50,18 +50,14 @@ L'architettura include:
       - [Prenotazione Esami:](#prenotazione-esami)
     - [Leggere le Metriche (Metrics-service)](#leggere-le-metriche-metrics-service)
   - [Architettura e Funzionamento (Flusso dei Dati) - TODO ADATTARE AD AUTENTICAZIONE JWT](#architettura-e-funzionamento-flusso-dei-dati---todo-adattare-ad-autenticazione-jwt)
-  - [Proprietà Non Funzionali (TODO)](#proprietà-non-funzionali-todo)
-    - [1. Verificare connessione TLS a Kafka](#1-verificare-connessione-tls-a-kafka)
-  - [Non-Functional Property (NFR)](#non-functional-property-nfr)
+  - [Non-Functional Property (NFP)](#non-functional-property-nfp)
     - [Prerequisites](#prerequisites)
     - [1. **Security \& Secrets Management**](#1-security--secrets-management)
     - [2. **Resilience, Fault Tolerance \& High Availability**](#2-resilience-fault-tolerance--high-availability)
       - [2.1. Fault Tollerance: Consumer Failure (Buffering)](#21-fault-tollerance-consumer-failure-buffering)
-      - [2.2. TODO High Availability: Self-Healing del Producer ??](#22-todo-high-availability-self-healing-del-producer-)
+      - [2.2. High Availability: Self-Healing del Producer](#22-high-availability-self-healing-del-producer)
     - [3. **Scalabilità \& Load Balancing (senza HPA)**](#3-scalabilità--load-balancing-senza-hpa)
-    - [4. **TODO Performance \& Autoscaling (HPA)**](#4-todo-performance--autoscaling-hpa)
-      - [4.1. TODO (fix HPA) Throughput e Latenza End-to-End](#41-todo-fix-hpa-throughput-e-latenza-end-to-end)
-      - [4.2. TODO Horizontal Pod Autoscaler (HPA)](#42-todo-horizontal-pod-autoscaler-hpa)
+    - [4. **Horizontal Pod Autoscaler (HPA)**](#4-horizontal-pod-autoscaler-hpa)
     - [4. **Kong Rate Limiting Policy (Optional)**](#4-kong-rate-limiting-policy-optional)
     - [6. Database Clean-up (opzionale)](#6-database-clean-up-opzionale)
     - [5. Verification \& Success Criteria](#5-verification--success-criteria)
@@ -308,7 +304,7 @@ Infine possiamo deployare i manifest restanti
 kubectl apply -f ./K8s
 ```
 
-### 7\. Creazione Secret per Producer Consumer e Metrics-service -  TODO DEFINIRE COME PRENDERE IL MONGO URI
+### 7\. Creazione Secret per Producer Consumer e Metrics-service
 Utilizziamo secert kubernetes invece delle password per permettere a Producer, Consumer e Metrics-service di connettersi a MongoDB.
 Il `MONGO_URI ` è stato ottenuto alla fine del configurazione di MongoDB ([3.1 Configurazione Utente Applicativo](#31-configurazione-utente-applicativo)).
 
@@ -626,25 +622,8 @@ Il flusso logico delle richieste è il seguente:
 | 4️⃣ | Metrics-service| Espone un endpoint `GET /metrics` per le metriche calcolate da MongoDB |
 | 5️⃣ | Kong | Espone gli ingress per `/event` (Producer) e `/metrics` (Metrics-service) |
 
-## Proprietà Non Funzionali (TODO)
 
-  * **Sicurezza**: La comunicazione tra Producer, Consumer e Kafka è protetta da **TLS**. L'autenticazione a Kafka avviene tramite **SASL SCRAM-SHA-512**.
-  * **Fault Tolerance**: Grazie a Kafka, se il Consumer smette di funzionare, i messaggi rimangono nella coda pronti per essere processati non appena il Consumer torna online.
-  * **Scalabilità**: È possibile scalare orizzontalmente i pod del Producer per gestire un carico maggiore di richieste in ingresso.
-  * **Self-Healing**: Kubernetes riavvia automaticamente i pod (Producer, Consumer, ecc.) in caso di crash.
-
-### 1. Verificare connessione TLS a Kafka
-
-Questo comando esegue un test `openssl` dall'interno di un broker Kafka per verificare che la porta 9093 (bootstrap TLS) sia esposta e funzionante.
-
-```bash
-kubectl exec -it uni-it-cluster-broker-0 -n kafka -- \
-openssl s_client -connect uni-it-cluster-kafka-bootstrap.kafka.svc.cluster.local:9093 -brief </dev/null
-```
------
-
------------------------------
-## Non-Functional Property (NFR)
+## Non-Functional Property (NFP)
 
 Questa sezione documenta la validazione delle proprietà non funzionali (NFR) dell'infrastruttura. L'obiettivo è certificare la **resilienza**, la **sicurezza**, la **scalabilità** e le **performance** dell'architettura a microservizi su Kubernetes, con focus specifico su Kafka, Kong Gateway e gestione dei Secrets.
 
@@ -744,15 +723,56 @@ Questo scenario simula il crash improvviso del Consumer mentre i dati continuano
 > **Expectation:** Al riavvio, il Consumer processa immediatamente i messaggi `offline-msg-*`. Nessuna perdita di dati.
 
 
-#### 2.2\. TODO High Availability: Self-Healing del Producer ??
-1.  **Forza l'eliminazione del Pod Broker:** mentre il sistema è sotto carico, elimina un pod attivo.
-    ```bash
-    kubectl delete pod uni-it-cluster-broker-0 -n kafka --force
-    ```
-    Attendere il riavvio automatico (StatefulSet controller)
+#### 2.2\. High Availability: Self-Healing del Producer
+Questo test verifica la resilienza dell'infrastruttura simulando un crash improvviso (o un'eliminazione accidentale) di un Pod. L'obiettivo è dimostrare che Kubernetes rileva la discrepanza tra lo stato desiderato e quello attuale, avviando immediatamente una nuova istanza per ripristinare il servizio.
 
-    > **Expectation:** Kubernetes rimuove l'endpoint del pod morto dal Service e ridirige il traffico sulla replica sana istantaneamente.
------
+1. **Verifica stato iniziale**
+    Prima di causare il guasto, identifichiamo il pod del Producer attivo e notiamo il suo `AGE` (tempo di attività).
+
+    ```bash
+    kubectl get pods -n kafka -l app=producer
+    ```
+
+    > *Nota:* Prendi nota del nome del pod (es. `producer-5d6f8-...`) e del fatto che è attivo da tempo (es. `5d`).
+
+2. **Verifica del Ripristino Automatico**
+    Osserviamo immediatamente lo stato dei pod. Kubernetes dovrebbe terminare il vecchio pod e crearne uno nuovo istantaneamente.
+
+    ```bash
+    kubectl get pods -n kafka -l app=producer -w
+    ```
+
+    *(Premi `CTRL+C` per uscire quando vedi il nuovo pod in Running)*
+
+3. **Simulazione del Guasto (Kill Pod)**
+    Forziamo la cancellazione del pod attualmente in esecuzione. Questo simula un "crash" fatale dell'applicazione.
+
+    ```bash
+    # Elimina automaticamente il primo pod del producer trovato
+    kubectl delete pod $(kubectl get pod -l app=producer -n kafka -o jsonpath="{.items[0].metadata.name}") -n kafka
+    ```
+
+    > **Expectation:**
+    > 1.  Il vecchio pod entra in stato `Terminating`.
+    > 2.  Un **nuovo pod** (con un nome diverso) appare immediatamente in stato `Pending` -\> `ContainerCreating` -\> `Running`.
+    > 3.  L'operazione avviene senza intervento umano.
+
+4. **Test Opzionale: Verifica Continuità del Servizio**
+    Per dimostrare che il disservizio è minimo o nullo durante il self-healing, puoi lanciare questo loop in un terminale separato **prima** di uccidere il pod (passo 2).
+
+    ```bash
+    # Invia una richiesta ogni 0.5s per monitorare la disponibilità
+    while true; do 
+      curl -s -o /dev/null -w "%{http_code} " \
+      http://producer.$IP.nip.io:$PORT/event/login \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"user_id":"healing-check"}'
+      sleep 0.5
+    done
+    ```
+    > **Risultato atteso:** Vedrai una sequenza di codici `200`. Potresti vedere un breve momento di pausa o un singolo errore di connessione durante lo switch, ma il servizio tornerà subito a rispondere `200`.
+
 ### 3\. **Scalabilità & Load Balancing (senza HPA)**
 
 **Obiettivo:** Verificare che il traffico sia distribuito tra le repliche e che il sistema sopravviva alla perdita di un nodo applicativo.
@@ -824,70 +844,43 @@ kubectl scale deployment consumer -n kafka --replicas=1
 
 
 -----
-### 4\. **TODO Performance & Autoscaling (HPA)**
+### 4\. **Horizontal Pod Autoscaler (HPA)**
 
-#### 4.1\. TODO (fix HPA) Throughput e Latenza End-to-End
-
-1. **Setup** 
+1.  **Setup Iniziale:** Deploy della configurazione per HPA
     ```bash
-    kubectl scale deploy/producer -n kafka --replicas=2
-    kubectl scale deploy/consumer -n kafka --replicas=3
-
-    kubectl get pods -n kafka -l "app in (producer, consumer)" --watch
+    kubectl apply -f K8s/hpa.yaml
     ```
 
-2.  **Ingestion Data:**
-    Invia 1000 eventi e calcola il tempo di ingestione.
-
+    Comandi per controlalre che sia effettivamente deployato e i relativi valori
     ```bash
-    time for i in {1..1000}; do 
-      curl -s -X POST http://producer.$IP.nip.io:$PORT/event/login \
-        -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"user_id\":\"perf-$i\"}" > /dev/null
-    done
+    kubectl get hpa -n kafka
+    kubectl describe hpa producer-hpa -n kafka | head -n 15
     ```
 
-
-3. **Ripristino 1 replica:** verificare che le altre vengano terminate correttamente prima di procedere
-    ```bash
-    kubectl scale deployment producer -n kafka --replicas=1
-    kubectl scale deployment consumer -n kafka --replicas=1
-
-    kubectl get pods -n kafka -l "app in (producer, consumer)"
-    ```
-
-4.  **Ingestion Data:**
-    Invia 1000 eventi e calcola il tempo di ingestione.
-
-    ```bash
-    time for i in {1..1000}; do 
-      curl -s -X POST http://producer.$IP.nip.io:$PORT/event/login \
-        -H "Authorization: Bearer $TOKEN" \
-        -H "Content-Type: application/json" \
-        -d "{\"user_id\":\"perf-$i\"}" > /dev/null
-    done
-    ```
-    Dovrei notare una differenza tra l'esecuzione mono replica e quella con più repliche
-    $$Throughput = \frac{Total Requests (1000)}{MeasuredTime (s)}$$
-
-
-#### 4.2\. TODO Horizontal Pod Autoscaler (HPA)
 2.  **HPA Trigger (Stress Test):**
     Genera carico sufficiente per saturare la soglia CPU definita nell'HPA.
 
     ```bash
-    # Generazione carico massivo
     for i in {1..5000}; do
-      curl -s -X POST http://producer.$IP.nip.io:$PORT/event/login \
-        -H "Content-Type: application/json" -d "{\"user_id\":\"hpa-stress-$i\"}" > /dev/null
+    curl -s -X POST "http://producer.$IP.nip.io:$PORT/event/login" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"user_id\":\"hpa-stress-$i\"}" \
+      > /dev/null
     done
+    ```
 
-    # Monitoraggio Scaling
+3.  **Monitoraggio Scaling:**
+    ```bash
     kubectl get hpa -n kafka -w
     ```
 
     > **Expectation:** Il numero di repliche (`REPLICAS`) aumenta automaticamente (es. da 1 a 4) al salire della CPU target.
+
+4.  **Restore:**
+    ```bash
+    kubectl delete -f K8s/hpa.yaml
+    ```
 
 -----
 ### 4\. **Kong Rate Limiting Policy (Optional)**
